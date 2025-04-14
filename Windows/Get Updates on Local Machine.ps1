@@ -15,9 +15,9 @@
     This command will retrieve and display all installed Windows updates in a table.
 
 .NOTES
-    Author: Your Name
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites: Must be run as Administrator for full access to installed update details.
 #>
 

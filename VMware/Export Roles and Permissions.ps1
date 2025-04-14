@@ -15,9 +15,9 @@
     The script runs interactively, prompting the user for connection details and export file path.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - PowerShell 5.1 or later.
       - VMware.PowerCLI module.

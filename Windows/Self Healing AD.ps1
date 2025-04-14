@@ -19,9 +19,9 @@
     The script will output status messages about the connectivity, replication health, and any remedial actions.
     
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
         - Administrative privileges.
         - ActiveDirectory PowerShell module must be installed.

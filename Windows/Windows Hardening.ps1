@@ -14,9 +14,9 @@
     Before running the script, please verify that the services and features being disabled are not needed in your environment.
     
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - The script must be run as an administrator.
       - Windows Server environment with the necessary components installed.

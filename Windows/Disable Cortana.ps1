@@ -17,9 +17,9 @@
     The script will modify the registry and restart Explorer to disable Cortana.
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #----------------------------------------------

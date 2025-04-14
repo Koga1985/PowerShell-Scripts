@@ -13,9 +13,9 @@
     These settings align with basic Security Technical Implementation Guide (STIG) recommendations.
     
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Script must be run as an administrator.
       - Hyper-V must be installed and the Hyper-V PowerShell module must be available.

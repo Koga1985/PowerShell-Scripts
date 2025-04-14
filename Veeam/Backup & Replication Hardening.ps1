@@ -19,8 +19,8 @@
       - Ensure that variables like 'YourBackupRepository', 'YourBackupUser', 'YourBackupJob', and 'YourNotification' are updated appropriately.
 
 .NOTES
-    Author:         Your Name or Organization
-    Created:        2025-04-14
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
     Version:        1.0
 #>
 

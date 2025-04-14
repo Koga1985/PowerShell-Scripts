@@ -17,9 +17,9 @@
     The script is interactive. User input is required at runtime for host connection and VM selection.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - PowerShell 5.1 or later.
       - Administrative privileges and necessary permissions to manage vCenter/ESXi.

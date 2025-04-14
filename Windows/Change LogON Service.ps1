@@ -30,9 +30,9 @@
     This example updates the credentials for the "Spooler" service on the computer "RemoteComputer" to use DOMAIN\NewUser.
     
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 Function Set-ServiceAcctCreds {

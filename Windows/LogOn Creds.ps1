@@ -28,9 +28,9 @@
     This example updates the credentials for the "Spooler" service to use the account DOMAIN\User with the specified password.
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites: Run this script as Administrator; the target service must be accessible.
 #>
 

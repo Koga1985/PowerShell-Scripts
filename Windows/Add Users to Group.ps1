@@ -20,9 +20,9 @@
     The script will prompt for no additional input since the CSV file path and group are preconfigured.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #----------------------------------------------

@@ -23,9 +23,9 @@
     PS C:\> .\Configure-DC.ps1 -domainName "yourdomain.local" -domainAdminPassword "YourSecurePassword" -dnsIpAddress "127.0.0.1"
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - The script must be run as Administrator.
       - The server hardware and OS must meet the requirements for Domain Controller promotion.

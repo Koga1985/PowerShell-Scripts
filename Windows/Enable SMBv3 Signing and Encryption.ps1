@@ -19,9 +19,9 @@
     This command will enable SMB signing and then display the status of the configurations.
     
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #----------------------------------------------

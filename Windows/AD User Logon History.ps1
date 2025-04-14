@@ -28,9 +28,9 @@
     ...
 
 .NOTES
-    Author: Your Name
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #----------------------------------------------

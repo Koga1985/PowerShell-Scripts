@@ -16,9 +16,9 @@
     The script will check for administrative privileges and, if necessary, relaunch itself with elevated rights.
     
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites: 
       - Run on a Windows system.
       - Must be executed with PowerShell.

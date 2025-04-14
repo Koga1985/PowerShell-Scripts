@@ -17,9 +17,9 @@
     (Displays the formatted table of installed updates)
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Run the script with appropriate permissions (typically Administrator).
       - The remote computer must be accessible and allow remote WMI queries.

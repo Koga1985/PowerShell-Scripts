@@ -26,9 +26,9 @@
     This example updates the services running under DOMAIN\User on RemoteServer01 with the new password, then restarts the services.
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Must be run with administrative privileges.
       - Remote PowerShell must be enabled if targeting a remote system.

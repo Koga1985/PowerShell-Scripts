@@ -22,9 +22,9 @@
       - This script should be run in an elevated PowerShell session.
 
 .NOTES
-    Created:       2025-04-14
-    Author:        Your Name or Organization
-    Version:       1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #==============================================

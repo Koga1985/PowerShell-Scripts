@@ -20,9 +20,9 @@
     This script does not require any command-line parameters. All configuration is performed via variables.
     
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - PowerShell 5.1 or later.
       - Necessary permissions to install modules and update files in the script directory.

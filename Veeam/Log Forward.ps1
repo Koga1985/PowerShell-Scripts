@@ -17,9 +17,9 @@
     - Adjust server names, export paths, and log directories as needed.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
 #>
 
 #==============================================

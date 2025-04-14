@@ -20,9 +20,9 @@
       - Placeholder strings for sensitive data replacement.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites: Ensure that the log folder specified in $location exists or update the variable accordingly.
 #>
 

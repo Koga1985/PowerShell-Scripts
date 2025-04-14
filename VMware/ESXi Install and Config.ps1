@@ -21,9 +21,9 @@
     The script is interactive and will prompt for all necessary input parameters.
 
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - PowerShell 5.1 or later.
       - VMware.PowerCLI module (if not installed, the script will install it).

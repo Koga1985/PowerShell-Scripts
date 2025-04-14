@@ -32,9 +32,9 @@
                        -dnsIpAddress "192.168.1.10" -selfHealingScriptPath "C:\Scripts\SelfHealingScript.ps1"
 
 .NOTES
-    Author: Your Name or Organization  
-    Date: 2025-04-14  
-    Version: 1.0  
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0 
     Prerequisites:
       - Must be run as an Administrator.
       - Server must meet all requirements for Domain Controller promotion.

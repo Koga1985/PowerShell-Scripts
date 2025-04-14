@@ -25,9 +25,9 @@
         -serverListFile "C:\serverlist.txt"
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Administrator privileges.
       - SQLPS or SQLServer module must be installed.

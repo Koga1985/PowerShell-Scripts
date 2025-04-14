@@ -44,9 +44,9 @@
         -exchangeSetupFolder "C:\Exchange\Setup" -installationMode "Install"
         
 .NOTES
-    Author: Your Name or Organization
-    Created: 2025-04-14
-    Version: 1.1
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
         - Must be run as Administrator.
         - Windows Server must be prepared with required roles/features, static IP, and domain membership.

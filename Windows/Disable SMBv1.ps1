@@ -19,9 +19,9 @@
     This command disables SMBv1 and outputs the current configuration status.
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Run as Administrator.
       - Windows system with SMB features.

@@ -30,9 +30,9 @@
     Follow prompts to enter the computer name, start and end dates, filtering and output options.
 
 .NOTES
-    Author: Your Name or Organization
-    Date: 2025-04-14
-    Version: 1.0
+    Author:         Dewain Smith #TheBeardedEngineer
+    Updated:        2025-04-14
+    Version:        1.0
     Prerequisites:
       - Administrative privileges.
       - Access to the Security event log on the target computer.
