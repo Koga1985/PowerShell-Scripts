@@ -27,20 +27,11 @@
       - Sufficient permissions to connect to and modify objects on the vCenter Server or ESXi host.
 #>
 
+
 #==============================================
 # Global Logging Function
 #==============================================
 function Write-Log {
-    <#
-    .SYNOPSIS
-        Writes a log message with a timestamp and severity level.
-    
-    .PARAMETER Message
-        The text of the log message.
-    
-    .PARAMETER Level
-        The severity level (e.g., "INFO", "ERROR"). Default is "INFO".
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -51,8 +42,21 @@ function Write-Log {
 }
 
 #==============================================
+# 0. Admin Rights and PowerShell Version Check
+#==============================================
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
+#==============================================
 # 1. Install or Update VMware.PowerCLI Module
 #==============================================
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing the latest version..." -Level "INFO"
@@ -80,6 +84,10 @@ try {
 #==============================================
 # 2. Connect to Source and Destination vCenter/ESXi Hosts
 #==============================================
+
+# Summary variable
+$Summary = @{}
+
 # Source connection details
 $sourceServer = Read-Host "Enter source vCenter Server or ESXi host"       # e.g., "source-vcenter.company.com"
 $sourceUser   = Read-Host "Enter source username"                          # e.g., "administrator@source.local"
@@ -89,8 +97,12 @@ Write-Log -Message "Connecting to source server: $sourceServer..."
 try {
     Connect-VIServer -Server $sourceServer -User $sourceUser -Password $sourcePassword -ErrorAction Stop | Out-Null
     Write-Log -Message "Successfully connected to source server: $sourceServer." -Level "INFO"
+    $Summary['Source Connection'] = "Success"
 } catch {
     Write-Log -Message "Error connecting to source server $sourceServer: $_" -Level "ERROR"
+    $Summary['Source Connection'] = "Failed"
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
@@ -103,10 +115,13 @@ Write-Log -Message "Connecting to destination server: $destinationServer..."
 try {
     Connect-VIServer -Server $destinationServer -User $destinationUser -Password $destinationPassword -ErrorAction Stop | Out-Null
     Write-Log -Message "Successfully connected to destination server: $destinationServer." -Level "INFO"
+    $Summary['Destination Connection'] = "Success"
 } catch {
     Write-Log -Message "Error connecting to destination server $destinationServer: $_" -Level "ERROR"
-    # Disconnect from source if destination fails
+    $Summary['Destination Connection'] = "Failed"
     Disconnect-VIServer -Server $sourceServer -Confirm:$false
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
@@ -116,16 +131,24 @@ try {
 # Prompt for the VM name to migrate (on the source environment)
 $vmName = Read-Host "Enter the virtual machine name to migrate"
 
+
 # Get the virtual machine from the source
 Write-Log -Message "Retrieving VM '$vmName' from source server..."
 $vm = Get-VM -Name $vmName -ErrorAction SilentlyContinue
 if ($vm -eq $null) {
     Write-Log -Message "Error: Virtual machine '$vmName' not found on source server." -Level "ERROR"
+    $Summary['VM Found'] = "No"
+    $Summary['VM Name'] = $vmName
     Disconnect-VIServer -Server $sourceServer -Confirm:$false
     Disconnect-VIServer -Server $destinationServer -Confirm:$false
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
+} else {
+    Write-Log -Message "Virtual machine '$vmName' found." -Level "INFO"
+    $Summary['VM Found'] = "Yes"
+    $Summary['VM Name'] = $vmName
 }
-Write-Log -Message "Virtual machine '$vmName' found." -Level "INFO"
 
 # Prompt for the destination host or cluster
 $destinationTarget = Read-Host "Enter the destination host or cluster"
@@ -138,42 +161,66 @@ if (-not $destination) {
     $destination = Get-Cluster -Name $destinationTarget -ErrorAction SilentlyContinue
 }
 
+
 if ($destination -eq $null) {
     Write-Log -Message "Error: Destination target '$destinationTarget' not found." -Level "ERROR"
+    $Summary['Destination Found'] = "No"
+    $Summary['Destination Target'] = $destinationTarget
     Disconnect-VIServer -Server $sourceServer -Confirm:$false
     Disconnect-VIServer -Server $destinationServer -Confirm:$false
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
+} else {
+    Write-Log -Message "Destination target '$destinationTarget' found." -Level "INFO"
+    $Summary['Destination Found'] = "Yes"
+    $Summary['Destination Target'] = $destinationTarget
 }
-Write-Log -Message "Destination target '$destinationTarget' found." -Level "INFO"
 
 #==============================================
 # 4. Migrate the Virtual Machine
 #==============================================
+
 Write-Log -Message "Migrating virtual machine '$vmName' to '$destinationTarget'..."
 try {
     Move-VM -VM $vm -Destination $destination -Confirm:$false -ErrorAction Stop
     Write-Log -Message "Virtual machine '$vmName' migrated successfully to '$destinationTarget'." -Level "INFO"
+    $Summary['Migration'] = "Success"
 } catch {
     Write-Log -Message "Error migrating virtual machine '$vmName': $_" -Level "ERROR"
+    $Summary['Migration'] = "Failed"
+    $Summary['Migration Error'] = $_
 }
 
 #==============================================
 # 5. Disconnect from Source and Destination Servers
 #==============================================
+
 Write-Log -Message "Disconnecting from source server: $sourceServer..."
 try {
     Disconnect-VIServer -Server $sourceServer -Confirm:$false | Out-Null
     Write-Log -Message "Disconnected from source server: $sourceServer." -Level "INFO"
+    $Summary['Source Disconnected'] = "Yes"
 } catch {
     Write-Log -Message "Error disconnecting from source server: $_" -Level "ERROR"
+    $Summary['Source Disconnected'] = "Error"
 }
 
 Write-Log -Message "Disconnecting from destination server: $destinationServer..."
 try {
     Disconnect-VIServer -Server $destinationServer -Confirm:$false | Out-Null
     Write-Log -Message "Disconnected from destination server: $destinationServer." -Level "INFO"
+    $Summary['Destination Disconnected'] = "Yes"
 } catch {
     Write-Log -Message "Error disconnecting from destination server: $_" -Level "ERROR"
+    $Summary['Destination Disconnected'] = "Error"
 }
 
+#==============================================
+# 6. Summary Output
+#==============================================
 Write-Log -Message "VM migration process completed." -Level "INFO"
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}

@@ -27,7 +27,29 @@
 #==============================================
 # Global Logging Setup
 #==============================================
+
+# Logging: Define a global log file path where all events and error messages will be recorded.
 $Global:LogFile = "C:\Logs\VeeamHardening.log"
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
+# Check for Veeam PowerShell module
+if (-not (Get-Module -ListAvailable -Name Veeam.Backup.PowerShell)) {
+    Write-Host "ERROR: Veeam PowerShell module is not installed or loaded." -ForegroundColor Red
+    exit 1
+}
+
+# Validate required variables
+foreach ($var in @('YourBackupRepository','YourBackupUser','YourBackupJob','YourNotification')) {
+    if (-not (Get-Variable $var -ValueOnly -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: Variable $var is not set. Please update the script with correct values." -ForegroundColor Red
+        exit 1
+    }
+}
 
 function Write-Log {
     <#
@@ -49,6 +71,7 @@ function Write-Log {
     Write-Host $logMessage
     Add-Content -Path $Global:LogFile -Value $logMessage
 }
+
 
 Write-Log "Starting Veeam Server Hardening configuration."
 
@@ -80,6 +103,14 @@ function Set-VeeamSetting {
 }
 
 #==============================================
+
+# Helper function for step summary
+$Summary = @{}
+function Add-Summary {
+    param([string]$Step,[bool]$Success)
+    $Summary[$Step] = $Success
+}
+
 # 1. Disable Unnecessary Services
 #==============================================
 Write-Log "Disabling unnecessary services..."
@@ -87,8 +118,10 @@ try {
     Stop-Service -Name 'VeeamBackupSvc' -Force
     Set-Service -Name 'VeeamBackupSvc' -StartupType 'Disabled'
     Write-Log "Service 'VeeamBackupSvc' stopped and disabled successfully."
+    Add-Summary "Disable Unnecessary Services" $true
 } catch {
     Write-Log "Failed to stop or disable 'VeeamBackupSvc'. Error: $_" "ERROR"
+    Add-Summary "Disable Unnecessary Services" $false
 }
 
 #==============================================
@@ -96,11 +129,12 @@ try {
 #==============================================
 Write-Log "Configuring strong authentication for Veeam components..."
 try {
-    # Enable SQL authentication mode for Veeam components.
     Set-VBRServer -SqlAuthenticationMode -Enable
     Write-Log "SQL authentication mode enabled successfully."
+    Add-Summary "Configure Strong Authentication" $true
 } catch {
     Write-Log "Failed to enable SQL authentication. Error: $_" "ERROR"
+    Add-Summary "Configure Strong Authentication" $false
 }
 
 #==============================================
@@ -108,19 +142,19 @@ try {
 #==============================================
 Write-Log "Limiting permissions on Veeam backup repositories..."
 try {
-    # Retrieve the backup repository by name.
-    $repo = Get-VBRBackupRepository -Name 'YourBackupRepository'
+    $repo = Get-VBRBackupRepository -Name $YourBackupRepository
     try {
-        # Retrieve the user whose permissions will be limited.
-        $user = Get-VBRUser -Name 'YourBackupUser'
-        # Remove permissions for the specified user on the repository.
+        $user = Get-VBRUser -Name $YourBackupUser
         Set-VBRBackupRepository -Repository $repo -Permissions $user -RemovePermissions
         Write-Log "Permissions removed from repository '$($repo.Name)' for user '$($user.Name)'."
+        Add-Summary "Limit Permissions on Backup Repositories" $true
     } catch {
         Write-Log "Failed to update permissions on repository '$($repo.Name)'. Error: $_" "ERROR"
+        Add-Summary "Limit Permissions on Backup Repositories" $false
     }
 } catch {
-    Write-Log "Failed to retrieve backup repository 'YourBackupRepository'. Error: $_" "ERROR"
+    Write-Log "Failed to retrieve backup repository '$YourBackupRepository'. Error: $_" "ERROR"
+    Add-Summary "Limit Permissions on Backup Repositories" $false
 }
 
 #==============================================
@@ -130,8 +164,10 @@ Write-Log "Enabling encryption for Veeam backup data..."
 try {
     Set-VBRGlobalOptions -EnableEncryption $true
     Write-Log "Backup encryption enabled successfully."
+    Add-Summary "Enable Backup Data Encryption" $true
 } catch {
     Write-Log "Failed to enable backup encryption. Error: $_" "ERROR"
+    Add-Summary "Enable Backup Data Encryption" $false
 }
 
 #==============================================
@@ -139,17 +175,18 @@ try {
 #==============================================
 Write-Log "Setting retention policies for backup data..."
 try {
-    # Retrieve the backup job by name.
-    $backupJob = Get-VBRJob -Name 'YourBackupJob'
+    $backupJob = Get-VBRJob -Name $YourBackupJob
     try {
-        # Set the retention options (weekly synchronization and retention count).
         Set-VBRJobOptions -Job $backupJob -RetentionSyncWeekly -RetentionWeekly 4
         Write-Log "Retention policy set for backup job '$($backupJob.Name)'."
+        Add-Summary "Set Retention Policies" $true
     } catch {
         Write-Log "Failed to set retention policy for backup job '$($backupJob.Name)'. Error: $_" "ERROR"
+        Add-Summary "Set Retention Policies" $false
     }
 } catch {
-    Write-Log "Failed to retrieve backup job 'YourBackupJob'. Error: $_" "ERROR"
+    Write-Log "Failed to retrieve backup job '$YourBackupJob'. Error: $_" "ERROR"
+    Add-Summary "Set Retention Policies" $false
 }
 
 #==============================================
@@ -157,17 +194,18 @@ try {
 #==============================================
 Write-Log "Enabling and configuring Veeam alarms for critical events..."
 try {
-    # Retrieve the notification configuration by name.
-    $notification = Get-VBRNotification -Name 'YourNotification'
+    $notification = Get-VBRNotification -Name $YourNotification
     try {
-        # Enable the notification.
         Enable-VBRNotification -Notification $notification
         Write-Log "Notification '$($notification.Name)' enabled successfully."
+        Add-Summary "Enable and Configure Alarms" $true
     } catch {
         Write-Log "Failed to enable notification '$($notification.Name)'. Error: $_" "ERROR"
+        Add-Summary "Enable and Configure Alarms" $false
     }
 } catch {
-    Write-Log "Failed to retrieve notification 'YourNotification'. Error: $_" "ERROR"
+    Write-Log "Failed to retrieve notification '$YourNotification'. Error: $_" "ERROR"
+    Add-Summary "Enable and Configure Alarms" $false
 }
 
 #==============================================
@@ -175,12 +213,19 @@ try {
 #==============================================
 Write-Log "Reviewing Veeam logs for anomalies..."
 try {
-    # Retrieve logs from the past 7 days.
     $logs = Get-VBRLog -From (Get-Date).AddDays(-7)
     $logs | Out-File -FilePath 'C:\VeeamLogsReview.txt'
     Write-Log "Logs for the last 7 days saved to 'C:\VeeamLogsReview.txt'."
+    Add-Summary "Review Veeam Logs" $true
 } catch {
     Write-Log "Failed to review Veeam logs. Error: $_" "ERROR"
+    Add-Summary "Review Veeam Logs" $false
 }
 
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($step in $Summary.Keys) {
+    Write-Host "$step: $($Summary[$step] ? 'Success' : 'Failed')"
+}
 Write-Log "Veeam Server Hardening configurations applied successfully."

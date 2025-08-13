@@ -62,6 +62,13 @@ function Write-Log {
 }
 
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+
 # 1. Ensure VMware.PowerCLI Module is Installed and Imported
 #==============================================
 Write-Log -Message "Checking for VMware.PowerCLI module..."
@@ -125,32 +132,40 @@ catch {
 }
 
 # Loop through each VLAN ID, check for existing port group, and create one if needed
+
+# Summary variable
+$Summary = @{}
+
 foreach ($vlanID in $vlanIDs) {
+    $success = $true
     Write-Log -Message "Processing VLAN ID: $vlanID..."
     try {
-        # Retrieve all port groups associated with the vSwitch
         $portGroups = Get-VirtualPortGroup -VirtualSwitch $vSwitch
-        
-        # Check if the current VLAN ID is already in use in a port group
         if ($portGroups | Where-Object { $_.VlanId -eq $vlanID }) {
             Write-Log -Message "VLAN $vlanID already exists on $vSwitchName. Skipping..." -Level "INFO"
-        } 
-        else {
-            # Define a new port group name, e.g., VLAN-100
+        } else {
             $pgName = "VLAN-$vlanID"
             Write-Log -Message "Creating port group '$pgName' on $vSwitchName with VLAN $vlanID..."
             New-VirtualPortGroup -Name $pgName -VirtualSwitch $vSwitch -VlanId $vlanID -ErrorAction Stop
             Write-Log -Message "VLAN $vlanID added to $vSwitchName as port group '$pgName'." -Level "INFO"
         }
-    }
-    catch {
+    } catch {
         Write-Log -Message "Failed to add VLAN $vlanID to $vSwitchName. Error: $_" -Level "ERROR"
+        $success = $false
     }
+    $Summary[$vlanID] = $success
 }
 
 #==============================================
 # 5. Disconnect from vCenter Server / ESXi Host
 #==============================================
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($vlanID in $Summary.Keys) {
+    Write-Host "VLAN $vlanID: $($Summary[$vlanID] ? 'Success' : 'Failed')"
+}
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false

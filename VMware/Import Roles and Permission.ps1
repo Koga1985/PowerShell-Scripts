@@ -55,8 +55,20 @@ function Write-Log {
 #==============================================
 # 1. Ensure VMware.PowerCLI Module is Installed and Imported
 #==============================================
-Write-Log -Message "Checking for VMware.PowerCLI module..."
 
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+
+# Check for PowerShell version
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
+Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing..." -Level "INFO"
     try {
@@ -127,29 +139,38 @@ catch {
 # 5. Iterate Through Each CSV Entry and Apply Permissions
 #==============================================
 Write-Log -Message "Applying roles and permissions from CSV..."
+
+# Summary variable
+$Summary = @{}
+
+$successCount = 0
+$failCount = 0
 foreach ($entry in $rolesPermissions) {
-    # Validate existence of the Role
+    $success = $true
     $role = Get-VIRole -Name $entry.RoleName -ErrorAction SilentlyContinue
     if (-not $role) {
         Write-Log -Message "Role '$($entry.RoleName)' not found. Skipping entry." -Level "ERROR"
+        $success = $false
+        $failCount++
         continue
     }
-    
-    # Validate existence of the Entity. Assumes $entry.Entity contains the Managed Object Reference (MoRef) ID.
     $entity = Get-View -Id $entry.Entity -ErrorAction SilentlyContinue
     if (-not $entity) {
         Write-Log -Message "Entity '$($entry.Entity)' not found. Skipping entry." -Level "ERROR"
+        $success = $false
+        $failCount++
         continue
     }
-    
-    # Apply the permission using the provided role, principal, and propagation flag.
     try {
         New-VIPermission -Role $role -Principal $entry.Principal -Entity $entity -Propagate $entry.Propagate -ErrorAction Stop
         Write-Log -Message "Permission for '$($entry.Principal)' applied on '$($entry.Entity)'." -Level "INFO"
-    }
-    catch {
+        $successCount++
+    } catch {
         Write-Log -Message "Error applying permission for '$($entry.Principal)' on '$($entry.Entity)': $_" -Level "ERROR"
+        $success = $false
+        $failCount++
     }
+    $Summary[$entry.Principal] = $success
 }
 
 Write-Log -Message "Roles and permissions imported successfully from $csvFilePath." -Level "INFO"
@@ -157,6 +178,13 @@ Write-Log -Message "Roles and permissions imported successfully from $csvFilePat
 #==============================================
 # 6. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+Write-Host "Total permissions applied: $successCount"
+Write-Host "Total failures: $failCount"
+Write-Host "Import file: $csvFilePath"
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null

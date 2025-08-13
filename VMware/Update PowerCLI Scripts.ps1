@@ -28,38 +28,53 @@
       - Necessary permissions to install modules and update files in the script directory.
 #>
 
+
+#----------------------------------------------
+# Logging Function
+#----------------------------------------------
+function Write-Log {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "$timeStamp [$Level] $Message"
+}
+
+#----------------------------------------------
+# Admin Rights and PowerShell Version Check
+#----------------------------------------------
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
 #----------------------------------------------
 # Function: Install-Or-Update-PowerCLI
 #----------------------------------------------
 function Install-Or-Update-PowerCLI {
-    <#
-    .SYNOPSIS
-        Ensures the VMware.PowerCLI module is installed and updated to the latest version.
-    
-    .DESCRIPTION
-        This function checks if the VMware.PowerCLI module is available.
-        - If it is not found, it installs the latest version.
-        - If found, it updates the module.
-    #>
-    # Retrieve module information if available.
     $installedModule = Get-Module -ListAvailable VMware.PowerCLI
-
     if (-not $installedModule) {
-        Write-Host "PowerCLI module not found. Installing the latest version..."
+        Write-Log -Message "PowerCLI module not found. Installing the latest version..."
         try {
             Install-Module -Name VMware.PowerCLI -Force -AllowClobber -ErrorAction Stop
-            Write-Host "VMware.PowerCLI installed successfully."
+            Write-Log -Message "VMware.PowerCLI installed successfully." -Level "INFO"
         } catch {
-            Write-Host "Error installing VMware.PowerCLI: $_"
+            Write-Log -Message "Error installing VMware.PowerCLI: $_" -Level "ERROR"
             exit
         }
     } else {
-        Write-Host "PowerCLI module is already installed. Updating to the latest version..."
+        Write-Log -Message "PowerCLI module is already installed. Updating to the latest version..."
         try {
             Update-Module -Name VMware.PowerCLI -ErrorAction Stop
-            Write-Host "VMware.PowerCLI updated successfully."
+            Write-Log -Message "VMware.PowerCLI updated successfully." -Level "INFO"
         } catch {
-            Write-Host "Error updating VMware.PowerCLI: $_"
+            Write-Log -Message "Error updating VMware.PowerCLI: $_" -Level "ERROR"
             exit
         }
     }
@@ -69,52 +84,54 @@ function Install-Or-Update-PowerCLI {
 # Main Script Execution
 #----------------------------------------------
 
+
 # 1. Ensure VMware.PowerCLI is installed or updated.
 Install-Or-Update-PowerCLI
 
 # 2. Import the PowerCLI module.
 try {
     Import-Module VMware.PowerCLI -ErrorAction Stop
-    Write-Host "VMware.PowerCLI module imported successfully."
+    Write-Log -Message "VMware.PowerCLI module imported successfully." -Level "INFO"
 } catch {
-    Write-Host "Error importing VMware.PowerCLI: $_"
+    Write-Log -Message "Error importing VMware.PowerCLI: $_" -Level "ERROR"
     exit
 }
 
-# 3. Set the directory containing PowerShell scripts to be updated.
+# 3. Prompt for the directory containing PowerShell scripts to be updated if not set.
 $scriptDirectory = "C:\Path\To\Your\Scripts"  # TODO: Update this path to your scripts folder
+if ($scriptDirectory -eq "C:\Path\To\Your\Scripts") {
+    $scriptDirectory = Read-Host "Enter the path to your PowerShell scripts directory"
+}
 
 # 4. Validate if the script directory exists.
+$Summary = @{'Scripts Processed'=0; 'Scripts Updated'=0; 'Scripts Failed'=0}
 if (Test-Path -Path $scriptDirectory) {
-    # Retrieve all .ps1 files in the specified directory.
     $scripts = Get-ChildItem -Path $scriptDirectory -Filter *.ps1
-    
-    # If no scripts are found, output a message.
     if ($scripts.Count -eq 0) {
-        Write-Host "No PowerShell scripts found in the specified directory: $scriptDirectory."
+        Write-Log -Message "No PowerShell scripts found in the specified directory: $scriptDirectory." -Level "INFO"
     } else {
-        # Process each script.
         foreach ($script in $scripts) {
-            Write-Host "Processing script: $($script.Name)"
+            $Summary['Scripts Processed']++
+            Write-Log -Message "Processing script: $($script.Name)"
             try {
-                # Read the entire content of the script file.
                 $scriptContent = Get-Content -Path $script.FullName -Raw
-                
-                # Update PowerCLI related import line to force-load the module.
-                # The -replace operator uses a regular expression pattern.
                 $updatedContent = $scriptContent -replace 'Import-Module\s+VMware\.PowerCLI', 'Import-Module VMware.PowerCLI -Force'
-                
-                # Write the updated content back to the original file.
                 $updatedContent | Set-Content -Path $script.FullName -ErrorAction Stop
-                
-                Write-Host "Updated script: $($script.Name)"
+                Write-Log -Message "Updated script: $($script.Name)" -Level "INFO"
+                $Summary['Scripts Updated']++
             } catch {
-                Write-Host "Failed to update script $($script.Name): $_"
+                Write-Log -Message "Failed to update script $($script.Name): $_" -Level "ERROR"
+                $Summary['Scripts Failed']++
             }
         }
     }
 } else {
-    Write-Host "The specified directory '$scriptDirectory' does not exist."
+    Write-Log -Message "The specified directory '$scriptDirectory' does not exist." -Level "ERROR"
 }
 
-Write-Host "PowerCLI scripts update process completed."
+# 5. Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}
+Write-Log -Message "PowerCLI scripts update process completed." -Level "INFO"

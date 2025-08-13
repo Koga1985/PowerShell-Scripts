@@ -24,20 +24,11 @@
       - Appropriate permissions to connect to and query the vCenter Server/ESXi host.
 #>
 
+
 #==============================================
 # Global Logging Function
 #==============================================
 function Write-Log {
-    <#
-    .SYNOPSIS
-        Outputs a log message with a timestamp and a specified severity level.
-    
-    .PARAMETER Message
-        The message text to log.
-    
-    .PARAMETER Level
-        The severity level of the message (e.g., "INFO" or "ERROR"). Default is "INFO".
-    #>
     param (
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -48,8 +39,21 @@ function Write-Log {
 }
 
 #==============================================
+# 0. Admin Rights and PowerShell Version Check
+#==============================================
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
+#==============================================
 # 1. Ensure VMware.PowerCLI Module is Installed and Imported
 #==============================================
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing..." -Level "INFO"
@@ -76,45 +80,50 @@ try {
 #==============================================
 # 2. Connect to vCenter Server or ESXi Host
 #==============================================
+
 # Prompt for connection details
 $server = Read-Host "Enter vCenter Server or ESXi host"        # e.g., "vcenter.example.com" or "esxi01.example.com"
 $user   = Read-Host "Enter username"                           # e.g., "administrator@vsphere.local"
-$password = Read-Host "Enter password" -AsSecureString            # The password is captured securely
+$password = Read-Host "Enter password" -AsSecureString         # The password is captured securely
 
 Write-Log -Message "Connecting to $server..."
+$Summary = @{'VMs Checked'=0; 'Snapshots Found'=0; 'Errors'=0}
 try {
     Connect-VIServer -Server $server -User $user -Password $password -ErrorAction Stop | Out-Null
     Write-Log -Message "Successfully connected to $server." -Level "INFO"
+    $Summary['Connection'] = "Success"
 } catch {
     Write-Log -Message "Error connecting to $server: $_" -Level "ERROR"
+    $Summary['Connection'] = "Failed"
+    $Summary['Errors']++
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
 #==============================================
 # 3. Get All Virtual Machines and Their Snapshots
 #==============================================
+
 Write-Log -Message "Retrieving virtual machines..."
 $allVMs = Get-VM
 
 foreach ($vm in $allVMs) {
+    $Summary['VMs Checked']++
     Write-Log -Message "Checking snapshots for VM: $($vm.Name)..." -Level "INFO"
-    
-    # Attempt to fetch snapshots for the current VM
     try {
         $snapshots = Get-Snapshot -VM $vm -ErrorAction Stop
     } catch {
         Write-Log -Message "Error fetching snapshots for VM '$($vm.Name)': $_" -Level "ERROR"
+        $Summary['Errors']++
         continue
     }
-    
     if ($snapshots.Count -eq 0) {
         Write-Log -Message "No snapshots found for VM '$($vm.Name)'." -Level "INFO"
     } else {
+        $Summary['Snapshots Found'] += $snapshots.Count
         foreach ($snapshot in $snapshots) {
-            # Calculate how many days ago the snapshot was created
             $snapshotAge = (Get-Date) - $snapshot.Created
-            
-            # Collect snapshot information into a custom object
             $snapshotInfo = [PSCustomObject]@{
                 VMName        = $vm.Name
                 SnapshotName  = $snapshot.Name
@@ -124,24 +133,31 @@ foreach ($vm in $allVMs) {
                 IsCurrent     = $snapshot.IsCurrent
                 CreatedBy     = if ($snapshot.Description) { $snapshot.Description -replace ".*\((.*)\)", '$1' } else { "N/A" }
             }
-
-            # Output the snapshot information in a formatted table
             $snapshotInfo | Format-Table -AutoSize
         }
     }
-    
     Write-Log -Message "--------------------------------------------" -Level "INFO"
 }
 
 #==============================================
 # 4. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null
     Write-Log -Message "Disconnected from $server." -Level "INFO"
+    $Summary['Disconnected'] = "Yes"
 } catch {
     Write-Log -Message "Error disconnecting from $server: $_" -Level "ERROR"
+    $Summary['Disconnected'] = "Error"
 }
 
+#==============================================
+# 5. Summary Output
+#==============================================
 Write-Log -Message "Snapshot collection process completed." -Level "INFO"
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}

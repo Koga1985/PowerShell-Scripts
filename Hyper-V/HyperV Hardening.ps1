@@ -23,6 +23,18 @@
 #>
 
 #----------------------------------------------
+<#
+Checks for admin rights and Hyper-V module before running.
+#>
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+if (-not (Get-Module -ListAvailable -Name Hyper-V)) {
+    Write-Host "ERROR: Hyper-V PowerShell module is not available." -ForegroundColor Red
+    exit 1
+}
+
 # Global Logging Function
 #----------------------------------------------
 function Write-Log {
@@ -73,50 +85,54 @@ try {
 }
 
 #----------------------------------------------
+
+# Helper function for VM actions with error handling
+function Invoke-VMAction {
+    param(
+        [string]$ActionDesc,
+        [scriptblock]$Action
+    )
+    try {
+        Write-Log -Message $ActionDesc
+        & $Action
+        Write-Log -Message "$ActionDesc completed." -Level "INFO"
+        return $true
+    } catch {
+        Write-Log -Message "Error: $ActionDesc failed: $_" -Level "ERROR"
+        return $false
+    }
+}
+
 # 3. Disable Named Pipe Connections for VMs
 #----------------------------------------------
-# Disabling named pipes for COM ports 1 and 2 on all VMs to reduce potential attack vectors.
-try {
-    Write-Log -Message "Disabling named pipe for COM1 on all VMs..."
-    Get-VM | ForEach-Object {
-        Set-VMComPort -VM $_ -Number 1 -Name "COM1" -PipeName $null -ErrorAction Stop
-    }
-    Write-Log -Message "Named pipe for COM1 disabled on all VMs." -Level "INFO"
-    
-    Write-Log -Message "Disabling named pipe for COM2 on all VMs..."
-    Get-VM | ForEach-Object {
-        Set-VMComPort -VM $_ -Number 2 -Name "COM2" -PipeName $null -ErrorAction Stop
-    }
-    Write-Log -Message "Named pipe for COM2 disabled on all VMs." -Level "INFO"
-} catch {
-    Write-Log -Message "Error disabling named pipes: $_" -Level "ERROR"
+$pipeCom1 = Invoke-VMAction -ActionDesc "Disabling named pipe for COM1 on all VMs..." -Action {
+    Get-VM | ForEach-Object { Set-VMComPort -VM $_ -Number 1 -Name "COM1" -PipeName $null -ErrorAction Stop }
+}
+$pipeCom2 = Invoke-VMAction -ActionDesc "Disabling named pipe for COM2 on all VMs..." -Action {
+    Get-VM | ForEach-Object { Set-VMComPort -VM $_ -Number 2 -Name "COM2" -PipeName $null -ErrorAction Stop }
 }
 
 #----------------------------------------------
 # 4. Disable Clipboard Integration for VMs
 #----------------------------------------------
-try {
-    Write-Log -Message "Disabling clipboard integration for all VMs..."
-    Get-VM | ForEach-Object {
-        Set-VMIntegrationService -VM $_ -Name "Clipboard" -Enabled $false -ErrorAction Stop
-    }
-    Write-Log -Message "Clipboard integration disabled on all VMs." -Level "INFO"
-} catch {
-    Write-Log -Message "Error disabling clipboard integration: $_" -Level "ERROR"
+$clipboard = Invoke-VMAction -ActionDesc "Disabling clipboard integration for all VMs..." -Action {
+    Get-VM | ForEach-Object { Set-VMIntegrationService -VM $_ -Name "Clipboard" -Enabled $false -ErrorAction Stop }
 }
 
 #----------------------------------------------
 # 5. Set Enhanced Session Transport Type to HvSocket for VMs
 #----------------------------------------------
-# This disables the default Enhanced Session Mode in favor of a more secure transport (HvSocket).
-try {
-    Write-Log -Message "Setting Enhanced Session Transport Type to HvSocket for all VMs..."
-    Get-VM | ForEach-Object {
-        Set-VM -VM $_ -EnhancedSessionTransportType HvSocket -ErrorAction Stop
-    }
-    Write-Log -Message "Enhanced Session Transport Type set to HvSocket on all VMs." -Level "INFO"
-} catch {
-    Write-Log -Message "Error setting Enhanced Session Transport Type: $_" -Level "ERROR"
+$hvSocket = Invoke-VMAction -ActionDesc "Setting Enhanced Session Transport Type to HvSocket for all VMs..." -Action {
+    Get-VM | ForEach-Object { Set-VM -VM $_ -EnhancedSessionTransportType HvSocket -ErrorAction Stop }
 }
 
+
+#----------------------------------------------
+# Summary Output
+#----------------------------------------------
 Write-Log -Message "Hyper-V STIG configuration completed." -Level "INFO"
+Write-Host "\nSummary:" -ForegroundColor Cyan
+Write-Host "Named pipe for COM1: $($pipeCom1 ? 'Success' : 'Failed')"
+Write-Host "Named pipe for COM2: $($pipeCom2 ? 'Success' : 'Failed')"
+Write-Host "Clipboard integration: $($clipboard ? 'Success' : 'Failed')"
+Write-Host "Enhanced Session Transport Type: $($hvSocket ? 'Success' : 'Failed')"

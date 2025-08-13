@@ -35,16 +35,11 @@ function Get-NumericInput {
         [double]$Default
     )
     do {
-        # Prompt the user for input.
-        $inputVal = Read-Host $Prompt
-
-        # If the user enters nothing, use the default value.
+        $inputVal = Read-Host "$Prompt (Default: $Default)"
         if ([string]::IsNullOrWhiteSpace($inputVal)) {
             $inputVal = $Default
             Write-Host "Using default value: $inputVal" -ForegroundColor Yellow
         }
-
-        # Try to parse the input as a double.
         $num = $null
         $valid = [double]::TryParse($inputVal, [ref]$num)
         if (-not $valid) {
@@ -54,93 +49,73 @@ function Get-NumericInput {
     return $num
 }
 
-# Prompt the user to choose a backup strategy.
-Write-Output "Choose your backup strategy:"
-Write-Output "1. Full Backups Only"
-Write-Output "2. Full + Incremental Backups"
-Write-Output "3. Full + Differential Backups"
-$backupChoice = Read-Host "Enter selection (1, 2, or 3)"
+# Function: Show-CalculationResult
+function Show-CalculationResult {
+    param(
+        [string]$Strategy,
+        [hashtable]$Details,
+        [double]$TotalStorage
+    )
+    Write-Output ""
+    Write-Output "=== Calculation Result ==="
+    Write-Output "Backup Strategy: $Strategy"
+    Write-Output ("-" * 50)
+    foreach ($key in $Details.Keys) {
+        Write-Output "$key: $($Details[$key])"
+    }
+    Write-Output "Total storage required: $TotalStorage GB"
+}
+
+
+# Prompt the user to choose a backup strategy with validation
+do {
+    Write-Output "Choose your backup strategy:"
+    Write-Output "1. Full Backups Only"
+    Write-Output "2. Full + Incremental Backups"
+    Write-Output "3. Full + Differential Backups"
+    $backupChoice = Read-Host "Enter selection (1, 2, or 3)"
+    $validChoice = $backupChoice -in @('1','2','3')
+    if (-not $validChoice) {
+        Write-Host "Invalid selection. Please enter 1, 2, or 3." -ForegroundColor Red
+    }
+} while (-not $validChoice)
 
 # Use a switch statement to handle each backup strategy.
 switch ($backupChoice) {
     "1" {
-        # Strategy 1: Full Backups Only
         Write-Host "You selected Full Backups Only." -ForegroundColor Green
-        # Prompt for the number of full backups to retain.
-        $numBackups = Get-NumericInput -Prompt "Enter the number of full backups to retain:" -Default 10
-        # Prompt for the size of each full backup in GB.
-        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB):" -Default 50
-        
-        # Calculate total storage requirement.
+        $numBackups = Get-NumericInput -Prompt "Enter the number of full backups to retain" -Default 10
+        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 50
         $totalStorage = $numBackups * $fullBackupSize
-        
-        Write-Output ""
-        Write-Output "=== Calculation Result ==="
-        Write-Output "Backup Strategy: Full Backups Only"
-        Write-Output "-----------------------------------------"
-        Write-Output "Number of full backups retained: $numBackups"
-        Write-Output "Size per full backup: $fullBackupSize GB"
-        Write-Output "Total storage required: $totalStorage GB"
+        $details = @{ "Number of full backups retained" = $numBackups; "Size per full backup (GB)" = $fullBackupSize }
+        Show-CalculationResult -Strategy "Full Backups Only" -Details $details -TotalStorage $totalStorage
     }
     "2" {
-        # Strategy 2: Full + Incremental Backups
         Write-Host "You selected Full + Incremental Backups." -ForegroundColor Green
-        # Prompt for the number of full backup cycles to retain.
-        $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain:" -Default 4
-        # Prompt for the number of incremental backups per cycle.
-        $numIncrementalsPerCycle = Get-NumericInput -Prompt "Enter the number of incremental backups per cycle:" -Default 6
-        
-        # Prompt for backup sizes.
-        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB):" -Default 100
-        $incrementalBackupSize = Get-NumericInput -Prompt "Enter the size of each incremental backup (GB):" -Default 10
-        
-        # Calculate storage for one cycle and then multiply by number of cycles.
+        $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain" -Default 4
+        $numIncrementalsPerCycle = Get-NumericInput -Prompt "Enter the number of incremental backups per cycle" -Default 6
+        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 100
+        $incrementalBackupSize = Get-NumericInput -Prompt "Enter the size of each incremental backup (GB)" -Default 10
         $cycleStorage = $fullBackupSize + ($numIncrementalsPerCycle * $incrementalBackupSize)
         $totalStorage = $numCycles * $cycleStorage
-        
-        Write-Output ""
-        Write-Output "=== Calculation Result ==="
-        Write-Output "Backup Strategy: Full + Incremental Backups"
-        Write-Output "----------------------------------------------------"
-        Write-Output "Full backup cycles retained: $numCycles"
-        Write-Output "Incremental backups per cycle: $numIncrementalsPerCycle"
-        Write-Output "Full backup size: $fullBackupSize GB"
-        Write-Output "Incremental backup size: $incrementalBackupSize GB"
-        Write-Output "Total storage required: $totalStorage GB"
+        $details = @{ "Full backup cycles retained" = $numCycles; "Incremental backups per cycle" = $numIncrementalsPerCycle; "Full backup size (GB)" = $fullBackupSize; "Incremental backup size (GB)" = $incrementalBackupSize }
+        Show-CalculationResult -Strategy "Full + Incremental Backups" -Details $details -TotalStorage $totalStorage
     }
     "3" {
-        # Strategy 3: Full + Differential Backups
         Write-Host "You selected Full + Differential Backups." -ForegroundColor Green
-        # Prompt for the number of full backup cycles to retain.
-        $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain:" -Default 4
-        # Prompt for the number of differential backups per cycle.
-        $numDifferentialsPerCycle = Get-NumericInput -Prompt "Enter the number of differential backups per cycle:" -Default 6
-        
-        # Prompt for backup sizes.
-        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB):" -Default 120
-        $differentialBackupSize = Get-NumericInput -Prompt "Enter the size of each differential backup (GB):" -Default 60
-        
-        # Calculate storage for one cycle and then multiply by number of cycles.
+        $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain" -Default 4
+        $numDifferentialsPerCycle = Get-NumericInput -Prompt "Enter the number of differential backups per cycle" -Default 6
+        $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 120
+        $differentialBackupSize = Get-NumericInput -Prompt "Enter the size of each differential backup (GB)" -Default 60
         $cycleStorage = $fullBackupSize + ($numDifferentialsPerCycle * $differentialBackupSize)
         $totalStorage = $numCycles * $cycleStorage
-        
-        Write-Output ""
-        Write-Output "=== Calculation Result ==="
-        Write-Output "Backup Strategy: Full + Differential Backups"
-        Write-Output "-------------------------------------------------------"
-        Write-Output "Full backup cycles retained: $numCycles"
-        Write-Output "Differential backups per cycle: $numDifferentialsPerCycle"
-        Write-Output "Full backup size: $fullBackupSize GB"
-        Write-Output "Differential backup size: $differentialBackupSize GB"
-        Write-Output "Total storage required: $totalStorage GB"
-    }
-    default {
-        # Invalid selection handling.
-        Write-Host "Invalid selection. Please run the script again and choose a valid option (1, 2, or 3)." -ForegroundColor Red
+        $details = @{ "Full backup cycles retained" = $numCycles; "Differential backups per cycle" = $numDifferentialsPerCycle; "Full backup size (GB)" = $fullBackupSize; "Differential backup size (GB)" = $differentialBackupSize }
+        Show-CalculationResult -Strategy "Full + Differential Backups" -Details $details -TotalStorage $totalStorage
     }
 }
 
-# Wait for the user to acknowledge before closing.
+
+# Show summary and wait for user to exit
 Write-Output ""
-Write-Host "Press any key to exit..."
-$x = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "Calculation complete. Press any key to exit..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

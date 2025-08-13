@@ -25,20 +25,11 @@
       - Appropriate permissions to connect to and modify tags on the vCenter Server/ESXi host.
 #>
 
+
 #----------------------------------------------
 # Global Logging Function
 #----------------------------------------------
 function Write-Log {
-    <#
-    .SYNOPSIS
-        Outputs a timestamped log message with a specified severity level.
-    
-    .PARAMETER Message
-        The log message text.
-    
-    .PARAMETER Level
-        The log level (e.g., "INFO", "ERROR"). Default is "INFO".
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -49,8 +40,21 @@ function Write-Log {
 }
 
 #----------------------------------------------
+# 0. Admin Rights and PowerShell Version Check
+#----------------------------------------------
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
+#----------------------------------------------
 # 1. Ensure VMware.PowerCLI Module is Installed and Imported
 #----------------------------------------------
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing the latest version..." -Level "INFO"
@@ -78,29 +82,42 @@ try {
 # 2. Connect to vCenter Server or ESXi Host
 #----------------------------------------------
 # Prompt the user for source connection details
+
+# Summary variable
+$Summary = @{'VMs Processed'=0; 'VMs Tagged'=0; 'VMs Failed'=0}
+
 $server = Read-Host "Enter vCenter Server or ESXi host"        # e.g., "vcenter.example.com" or "esxi01.example.com"
 $user   = Read-Host "Enter username"                           # e.g., "administrator@vsphere.local"
-$password = Read-Host "Enter password" -AsSecureString            # Password is captured securely
+$password = Read-Host "Enter password" -AsSecureString         # Password is captured securely
 
 Write-Log -Message "Connecting to $server..."
 try {
     Connect-VIServer -Server $server -User $user -Password $password -ErrorAction Stop | Out-Null
     Write-Log -Message "Successfully connected to $server." -Level "INFO"
+    $Summary['Connection'] = "Success"
 } catch {
     Write-Log -Message "Error connecting to $server: $_" -Level "ERROR"
+    $Summary['Connection'] = "Failed"
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
 #----------------------------------------------
 # 3. Retrieve All Virtual Machines
 #----------------------------------------------
+
 Write-Log -Message "Retrieving all virtual machines..."
 try {
     $vms = Get-VM -ErrorAction Stop
     Write-Log -Message "Retrieved $($vms.Count) VMs." -Level "INFO"
+    $Summary['VMs Processed'] = $vms.Count
 } catch {
     Write-Log -Message "Error retrieving virtual machines: $_" -Level "ERROR"
+    $Summary['VMs Processed'] = 0
     Disconnect-VIServer -Confirm:$false
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
@@ -147,13 +164,16 @@ if (-not $tag) {
 #----------------------------------------------
 # 6. Apply the Tag to Each Virtual Machine
 #----------------------------------------------
+
 foreach ($vm in $vms) {
     Write-Log -Message "Tagging VM '$($vm.Name)' with tag '$tagName' under category '$tagCategoryName'..."
     try {
         New-VIPermission -Tag $tag -Entity $vm -ErrorAction Stop
         Write-Log -Message "Successfully tagged VM '$($vm.Name)'." -Level "INFO"
+        $Summary['VMs Tagged']++
     } catch {
         Write-Log -Message "Error tagging VM '$($vm.Name)': $_" -Level "ERROR"
+        $Summary['VMs Failed']++
     }
 }
 
@@ -162,12 +182,22 @@ Write-Log -Message "Tagging process completed." -Level "INFO"
 #----------------------------------------------
 # 7. Disconnect from vCenter Server or ESXi Host
 #----------------------------------------------
+
 Write-Log -Message "Disconnecting from vCenter Server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null
     Write-Log -Message "Disconnected from vCenter Server." -Level "INFO"
+    $Summary['Disconnected'] = "Yes"
 } catch {
     Write-Log -Message "Error disconnecting from vCenter Server: $_" -Level "ERROR"
+    $Summary['Disconnected'] = "Error"
 }
 
+#----------------------------------------------
+# 8. Summary Output
+#----------------------------------------------
 Write-Log -Message "Script execution completed." -Level "INFO"
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}

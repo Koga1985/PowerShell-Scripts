@@ -125,6 +125,13 @@ function Sanitize-LogFile {
 #==============================================
 # Global Variables and Setup
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
 # Define the log location (update as needed)
 $location = "YourLogLocationPath"
 
@@ -147,17 +154,26 @@ $errorLogFile = "C:\VeeamLogs\ScrubberErrorLog.txt"
 # Get all log files (with a .log extension) from the specified location recursively.
 $logFiles = Get-ChildItem -Path $location -Filter "*.log" -Recurse
 
-# Loop through each discovered log file and sanitize its contents.
+
+# Summary variable
+$Summary = @{}
+
 foreach ($logFile in $logFiles) {
+    $success = $true
     try {
-        # Call the function to sanitize the log file.
         Sanitize-LogFile -LogFilePath $logFile.FullName -HostPlaceholder $hostNamePlaceholder -IpPlaceholder $ipAddressPlaceholder
-    }
-    catch {
+    } catch {
         $errorMessage = "$(Get-Date) - Error processing $($logFile.FullName): $_"
         Write-Log -Message $errorMessage -Level "ERROR"
         Add-Content -Path $errorLogFile -Value $errorMessage
+        $success = $false
     }
+    $Summary[$logFile.FullName] = $success
 }
 
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($file in $Summary.Keys) {
+    Write-Host "$file: $($Summary[$file] ? 'Sanitized' : 'Failed')"
+}
 Write-Host "Log sanitization process completed." -ForegroundColor Green

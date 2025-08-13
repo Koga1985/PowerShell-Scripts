@@ -27,8 +27,13 @@ function Get-SystemUptime {
     #>
     [CmdletBinding()]
     param ()
-    $uptime = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
-    Write-Output $uptime
+    try {
+        $uptime = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+        Write-Host "System Uptime:" -ForegroundColor Cyan
+        Write-Output $uptime
+    } catch {
+        Write-Host "Error retrieving system uptime: $_" -ForegroundColor Red
+    }
 }
 
 function Get-RunningServices {
@@ -38,7 +43,11 @@ function Get-RunningServices {
     #>
     [CmdletBinding()]
     param ()
-    Get-Service | Where-Object Status -eq 'Running'
+    try {
+        Get-Service | Where-Object Status -eq 'Running' | Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving running services: $_" -ForegroundColor Red
+    }
 }
 
 function Get-DiskUsage {
@@ -48,11 +57,16 @@ function Get-DiskUsage {
     #>
     [CmdletBinding()]
     param ()
-    Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" |
-        Select-Object DeviceID,
-            @{Name='Size(GB)';Expression={[math]::Round($_.Size/1GB,2)}},
-            @{Name='Free(GB)';Expression={[math]::Round($_.FreeSpace/1GB,2)}},
-            @{Name='Free(%)';Expression={[math]::Round(($_.FreeSpace/$_.Size)*100,2)}}
+    try {
+        Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" |
+            Select-Object DeviceID,
+                @{Name='Size(GB)';Expression={[math]::Round($_.Size/1GB,2)}},
+                @{Name='Free(GB)';Expression={[math]::Round($_.FreeSpace/1GB,2)}},
+                @{Name='Free(%)';Expression={[math]::Round(($_.FreeSpace/$_.Size)*100,2)}} |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving disk usage: $_" -ForegroundColor Red
+    }
 }
 
 function Get-TopCPUProcesses {
@@ -62,9 +76,14 @@ function Get-TopCPUProcesses {
     #>
     [CmdletBinding()]
     param()
-    Get-Process |
-        Sort-Object CPU -Descending |
-        Select-Object -First 5 Name,CPU
+    try {
+        Get-Process |
+            Sort-Object CPU -Descending |
+            Select-Object -First 5 Name,CPU |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving top CPU processes: $_" -ForegroundColor Red
+    }
 }
 
 function Get-ListeningPorts {
@@ -74,9 +93,14 @@ function Get-ListeningPorts {
     #>
     [CmdletBinding()]
     param()
-    Get-NetTCPConnection -State Listen |
-        Select-Object LocalAddress,LocalPort,OwningProcess |
-        Sort-Object LocalPort
+    try {
+        Get-NetTCPConnection -State Listen |
+            Select-Object LocalAddress,LocalPort,OwningProcess |
+            Sort-Object LocalPort |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving listening ports: $_" -ForegroundColor Red
+    }
 }
 
 function Test-MultiPing {
@@ -91,9 +115,15 @@ function Test-MultiPing {
         [Parameter(Mandatory)]
         [String[]]$Hosts
     )
-    $Hosts | ForEach-Object {
-        Test-Connection $_ -Count 1 |
-            Select-Object Address,Status
+    foreach ($host in $Hosts) {
+        try {
+            $result = Test-Connection $host -Count 1 -ErrorAction Stop |
+                Select-Object Address,Status
+            Write-Host "Ping to $host succeeded." -ForegroundColor Green
+            $result | Format-Table -AutoSize
+        } catch {
+            Write-Host "Ping to $host failed: $_" -ForegroundColor Red
+        }
     }
 }
 
@@ -104,7 +134,12 @@ function Show-LatestAppEvents {
     #>
     [CmdletBinding()]
     param()
-    Get-EventLog -LogName Application -Newest 20
+    try {
+        Get-EventLog -LogName Application -Newest 20 |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving application events: $_" -ForegroundColor Red
+    }
 }
 
 function Export-SystemLog {
@@ -119,9 +154,13 @@ function Export-SystemLog {
         [Parameter(Mandatory)]
         [string]$Path
     )
-    Get-EventLog -LogName System |
-        Export-Csv -Path $Path -NoTypeInformation
-    Write-Output "System log exported to $Path"
+    try {
+        Get-EventLog -LogName System |
+            Export-Csv -Path $Path -NoTypeInformation
+        Write-Host "System log exported to $Path" -ForegroundColor Green
+    } catch {
+        Write-Host "Error exporting system log: $_" -ForegroundColor Red
+    }
 }
 
 function Restart-PrintSpooler {
@@ -131,8 +170,12 @@ function Restart-PrintSpooler {
     #>
     [CmdletBinding()]
     param()
-    Restart-Service -Name Spooler -Force
-    Write-Output "Print Spooler restarted."
+    try {
+        Restart-Service -Name Spooler -Force
+        Write-Host "Print Spooler restarted." -ForegroundColor Green
+    } catch {
+        Write-Host "Error restarting Print Spooler: $_" -ForegroundColor Red
+    }
 }
 
 function Get-InstalledUpdates {
@@ -142,8 +185,13 @@ function Get-InstalledUpdates {
     #>
     [CmdletBinding()]
     param()
-    Get-HotFix |
-        Select-Object InstalledOn,Description,HotFixID
+    try {
+        Get-HotFix |
+            Select-Object InstalledOn,Description,HotFixID |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error retrieving installed updates: $_" -ForegroundColor Red
+    }
 }
 
 function Resolve-DNSNameInfo {
@@ -158,8 +206,13 @@ function Resolve-DNSNameInfo {
         [Parameter(Mandatory)]
         [string]$Name
     )
-    Resolve-DnsName -Name $Name |
-        Select-Object Name,IPAddress,QueryType
+    try {
+        Resolve-DnsName -Name $Name |
+            Select-Object Name,IPAddress,QueryType |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error resolving DNS name: $_" -ForegroundColor Red
+    }
 }
 
 function Find-DormantAccounts {
@@ -174,8 +227,13 @@ function Find-DormantAccounts {
         [Parameter(Mandatory)]
         [int]$DaysInactive
     )
-    Search-ADAccount -UsersOnly -AccountInactive -TimeSpan (New-TimeSpan -Days $DaysInactive) |
-        Select-Object Name,LastLogonDate
+    try {
+        Search-ADAccount -UsersOnly -AccountInactive -TimeSpan (New-TimeSpan -Days $DaysInactive) |
+            Select-Object Name,LastLogonDate |
+            Format-Table -AutoSize
+    } catch {
+        Write-Host "Error finding dormant accounts: $_" -ForegroundColor Red
+    }
 }
 
 function Show-ITToolkit {
@@ -191,13 +249,25 @@ function Show-ITToolkit {
         @{Name='Disk Usage'; Action='Get-DiskUsage'},
         @{Name='Top CPU Processes'; Action='Get-TopCPUProcesses'},
         @{Name='Listening TCP Ports'; Action='Get-ListeningPorts'},
-        @{Name='Ping Multiple Hosts'; Action={ Read-Host 'Hosts (comma-separated)' | Split-Path -Delimiter ',' | Test-MultiPing }},
+        @{Name='Ping Multiple Hosts'; Action={
+            $hosts = Read-Host 'Hosts (comma-separated)'
+            if ($hosts) { Test-MultiPing ($hosts -split ',') } else { Write-Host 'No hosts entered.' -ForegroundColor Yellow }
+        }},
         @{Name='Latest App Events'; Action='Show-LatestAppEvents'},
-        @{Name='Export System Log'; Action={ Export-SystemLog (Read-Host 'Export Path (e.g. C:\Temp\SystemLog.csv)') }},
+        @{Name='Export System Log'; Action={
+            $path = Read-Host 'Export Path (e.g. C:\Temp\SystemLog.csv)'
+            if ($path) { Export-SystemLog $path } else { Write-Host 'No path entered.' -ForegroundColor Yellow }
+        }},
         @{Name='Restart Print Spooler'; Action='Restart-PrintSpooler'},
         @{Name='Installed Updates'; Action='Get-InstalledUpdates'},
-        @{Name='Resolve DNS Name'; Action={ Resolve-DNSNameInfo (Read-Host 'Hostname or FQDN') }},
-        @{Name='Find Dormant AD Accounts'; Action={ Find-DormantAccounts (Read-Host 'Days Inactive') }}
+        @{Name='Resolve DNS Name'; Action={
+            $name = Read-Host 'Hostname or FQDN'
+            if ($name) { Resolve-DNSNameInfo $name } else { Write-Host 'No name entered.' -ForegroundColor Yellow }
+        }},
+        @{Name='Find Dormant AD Accounts'; Action={
+            $days = Read-Host 'Days Inactive'
+            if ($days -as [int] -gt 0) { Find-DormantAccounts $days } else { Write-Host 'Invalid days entered.' -ForegroundColor Yellow }
+        }}
     )
     do {
         Clear-Host
@@ -207,10 +277,13 @@ function Show-ITToolkit {
         }
         Write-Host "[0] Exit"
         $choice = Read-Host 'Select an option'
-        if ($choice -as [int] -gt 0 -and $choice -le $menu.Count) {
+        if ($choice -match '^[0-9]+$' -and [int]$choice -gt 0 -and [int]$choice -le $menu.Count) {
             "`nRunning: $($menu[$choice-1].Name)`n" | Write-Host
             & $menu[$choice-1].Action
             Write-Host "`nPress Enter to continue..."; Read-Host | Out-Null
+        } elseif ($choice -ne '0') {
+            Write-Host "Invalid selection. Please enter a number between 0 and $($menu.Count)." -ForegroundColor Red
+            Start-Sleep -Seconds 1
         }
     } until ($choice -eq '0')
 }

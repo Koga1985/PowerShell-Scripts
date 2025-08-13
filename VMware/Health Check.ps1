@@ -53,6 +53,19 @@ function Write-Log {
 #==============================================
 # 1. Ensure VMware.PowerCLI is Installed and Imported
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+
+# Check for PowerShell version
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "PowerCLI module not found. Installing..." -Level "INFO"
@@ -67,7 +80,6 @@ if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module already installed." -Level "INFO"
 }
 
-# Import the PowerCLI module
 Write-Log -Message "Importing VMware.PowerCLI module..."
 try {
     Import-Module VMware.PowerCLI -ErrorAction Stop
@@ -107,50 +119,62 @@ if (-not $csvFilePath) {
 #==============================================
 # 4. Collect Health Check Data
 #==============================================
+
+# Summary variable
+$Summary = @{}
+
 # Initialize an empty array to store all the health check results.
 $healthCheckResults = @()
 
-# Check host status: Retrieves each host's name, connection state, and power state.
+# Check host status
 Write-Log -Message "Checking host status..."
 try {
     $hostStatus = Get-VMHost | Select-Object Name, ConnectionState, PowerState
     $healthCheckResults += $hostStatus
     Write-Log -Message "Host status data collected." -Level "INFO"
+    $Summary['Host Status'] = $true
 } catch {
     Write-Log -Message "Error retrieving host status: $_" -Level "ERROR"
+    $Summary['Host Status'] = $false
 }
 
-# Check datastore usage: Retrieves datastore name and capacity information.
+# Check datastore usage
 Write-Log -Message "Checking datastore usage..."
 try {
     $datastoreUsage = Get-Datastore | Select-Object Name, CapacityGB, FreeSpaceGB, UsedSpaceGB
     $healthCheckResults += $datastoreUsage
     Write-Log -Message "Datastore usage data collected." -Level "INFO"
+    $Summary['Datastore Usage'] = $true
 } catch {
     Write-Log -Message "Error retrieving datastore usage: $_" -Level "ERROR"
+    $Summary['Datastore Usage'] = $false
 }
 
-# Check VM configurations: Retrieves VMs' name, power state, CPU, memory, and attached devices.
+# Check VM configurations
 Write-Log -Message "Checking VM configurations..."
 try {
     $vmConfigs = Get-VM | Select-Object Name, PowerState, NumCpu, MemoryGB, HardDisks, NetworkAdapters
     $healthCheckResults += $vmConfigs
     Write-Log -Message "VM configuration data collected." -Level "INFO"
+    $Summary['VM Configurations'] = $true
 } catch {
     Write-Log -Message "Error retrieving VM configurations: $_" -Level "ERROR"
+    $Summary['VM Configurations'] = $false
 }
 
-# Check for snapshots: Retrieves snapshot details for all VMs.
+# Check for snapshots
 Write-Log -Message "Checking for snapshots..."
 try {
     $snapshots = Get-VM | Get-Snapshot | Select-Object VM, Name, Created, SizeGB
     $healthCheckResults += $snapshots
     Write-Log -Message "Snapshot data collected." -Level "INFO"
+    $Summary['Snapshots'] = $true
 } catch {
     Write-Log -Message "Error retrieving snapshots: $_" -Level "ERROR"
+    $Summary['Snapshots'] = $false
 }
 
-# Check for orphaned VMs: Finds VMs that are marked as inaccessible.
+# Check for orphaned VMs
 Write-Log -Message "Checking for orphaned VMs..."
 try {
     $orphanedVMs = Get-VM -Name '*' -ErrorAction SilentlyContinue | Where-Object {
@@ -158,24 +182,38 @@ try {
     }
     $healthCheckResults += $orphanedVMs
     Write-Log -Message "Orphaned VM data collected." -Level "INFO"
+    $Summary['Orphaned VMs'] = $true
 } catch {
     Write-Log -Message "Error retrieving orphaned VMs: $_" -Level "ERROR"
+    $Summary['Orphaned VMs'] = $false
 }
 
 #==============================================
 # 5. Export Health Check Results to CSV
 #==============================================
+
+# Export health check results
 Write-Log -Message "Exporting health check results to CSV file: $csvFilePath..."
 try {
     $healthCheckResults | Export-Csv -Path $csvFilePath -NoTypeInformation -ErrorAction Stop
     Write-Log -Message "Health check results successfully exported to $csvFilePath." -Level "INFO"
+    $Summary['Export to CSV'] = $true
 } catch {
     Write-Log -Message "Error exporting health check results: $_" -Level "ERROR"
+    $Summary['Export to CSV'] = $false
 }
 
 #==============================================
 # 6. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($step in $Summary.Keys) {
+    Write-Host "$step: $($Summary[$step] ? 'Success' : 'Failed')"
+}
+Write-Host "Export file: $csvFilePath"
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null

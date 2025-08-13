@@ -23,20 +23,11 @@
       - Sufficient permissions to connect to the vCenter/ESXi host and to manage virtual machines.
 #>
 
+
 #==============================================
 # Global Logging Function
 #==============================================
 function Write-Log {
-    <#
-    .SYNOPSIS
-        Writes a log message with a timestamp and severity level.
-    
-    .PARAMETER Message
-        The text of the log message.
-    
-    .PARAMETER Level
-        The severity level (e.g., "INFO", "ERROR"). Default is "INFO".
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -47,8 +38,21 @@ function Write-Log {
 }
 
 #==============================================
+# 0. Admin Rights and PowerShell Version Check
+#==============================================
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
+#==============================================
 # 1. Ensure VMware.PowerCLI Module is Installed and Imported
 #==============================================
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing the latest version..." -Level "INFO"
@@ -76,6 +80,10 @@ try {
 #==============================================
 # 2. Connect to vCenter Server or ESXi Host
 #==============================================
+
+# Summary variable
+$Summary = @{'VMs Processed'=0; 'VMs Updated'=0; 'VMs Failed'=0}
+
 # Prompt for connection details
 $server = Read-Host "Enter vCenter Server or ESXi host"        # e.g., "vcenter.example.com" or "esxi01.example.com"
 $user = Read-Host "Enter username"                              # e.g., "administrator@vsphere.local"
@@ -85,65 +93,81 @@ Write-Log -Message "Connecting to $server..."
 try {
     Connect-VIServer -Server $server -User $user -Password $password -ErrorAction Stop | Out-Null
     Write-Log -Message "Successfully connected to $server." -Level "INFO"
+    $Summary['Connection'] = "Success"
 } catch {
     Write-Log -Message "Error connecting to $server: $_" -Level "ERROR"
+    $Summary['Connection'] = "Failed"
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
 #==============================================
 # 3. Retrieve All Virtual Machines
 #==============================================
+
 Write-Log -Message "Retrieving all virtual machines..."
 try {
     $vms = Get-VM -ErrorAction Stop
     Write-Log -Message "Retrieved $($vms.Count) virtual machines." -Level "INFO"
+    $Summary['VMs Processed'] = $vms.Count
 } catch {
     Write-Log -Message "Error retrieving virtual machines: $_" -Level "ERROR"
+    $Summary['VMs Processed'] = 0
     Disconnect-VIServer -Confirm:$false
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
     exit
 }
 
 #==============================================
 # 4. Check VMware Tools Status and Update if Necessary
 #==============================================
+
 foreach ($vm in $vms) {
     Write-Log -Message "Checking VMware Tools for VM: $($vm.Name)..." -Level "INFO"
-    
     try {
-        # Retrieve the VMware Tools status for the VM.
         $toolsStatus = $vm | Get-VMTools | Select-Object -ExpandProperty ToolsVersionStatus
     } catch {
         Write-Log -Message "Error fetching VMware Tools status for VM '$($vm.Name)': $_" -Level "ERROR"
+        $Summary['VMs Failed']++
         continue
     }
-    
-    # If tools are not installed or not running, update them.
     if ($toolsStatus -eq "toolsNotInstalled" -or $toolsStatus -eq "toolsNotRunning") {
         Write-Log -Message "VMware Tools not installed or not running for VM '$($vm.Name)'. Initiating update..." -Level "INFO"
-        
         try {
-            # Update VMware Tools without rebooting the VM.
             Update-Tools -VM $vm -NoReboot -ErrorAction Stop
             Write-Log -Message "VMware Tools updated successfully for VM '$($vm.Name)'." -Level "INFO"
+            $Summary['VMs Updated']++
         } catch {
             Write-Log -Message "Error updating VMware Tools for VM '$($vm.Name)': $_" -Level "ERROR"
+            $Summary['VMs Failed']++
         }
     } else {
         Write-Log -Message "VMware Tools already up-to-date for VM '$($vm.Name)'." -Level "INFO"
     }
-    
     Write-Log -Message "--------------------------------------------" -Level "INFO"
 }
 
 #==============================================
 # 5. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null
     Write-Log -Message "Disconnected from $server." -Level "INFO"
+    $Summary['Disconnected'] = "Yes"
 } catch {
     Write-Log -Message "Error disconnecting from $server: $_" -Level "ERROR"
+    $Summary['Disconnected'] = "Error"
 }
 
+#==============================================
+# 6. Summary Output
+#==============================================
 Write-Log -Message "VMware Tools update process completed." -Level "INFO"
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}

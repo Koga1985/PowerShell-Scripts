@@ -30,8 +30,21 @@
     Adjust the commands if your environment uses different cmdlet names or modules.
 #>
 
+
 # Logging: Define a global log file path where all events and error messages will be recorded.
 $Global:LogFile = "C:\Logs\HomeLabDeploy.log"
+
+# Check for VMware PowerCLI module
+if (-not (Get-Module -ListAvailable -Name VMware.PowerCLI)) {
+    Write-Host "ERROR: VMware PowerCLI module is not installed." -ForegroundColor Red
+    exit 1
+}
+
+# Check for connection to vCenter/ESXi
+if (-not (Get-VMHost -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Not connected to a vCenter or ESXi host. Run 'Connect-VIServer' first." -ForegroundColor Red
+    exit 1
+}
 
 # Function to log messages
 function Write-Log {
@@ -47,11 +60,33 @@ function Write-Log {
     Add-Content -Path $Global:LogFile -Value $logMessage
 }
 
+
 # VARIABLES
 $VMHost    = "YourVMHost"           # Replace with your VMware ESXi host or vCenter Server address.
 $VMFolder  = "HomeLab"              # Folder (or datacenter/cluster) where VMs will be created.
 $Datastore = "YourDatastore"        # Replace with the name of your datastore.
 $ISOPath   = "C:\Path\To\WindowsServerISO.iso"   # Full path to the Windows Server ISO file.
+
+# Validate required variables
+foreach ($var in @('VMHost','VMFolder','Datastore','ISOPath')) {
+    if (-not (Get-Variable $var -ValueOnly)) {
+        Write-Host "ERROR: Variable $var is not set." -ForegroundColor Red
+        exit 1
+    }
+}
+
+<#
+Reusable function to create multiple VMs from a hashtable array
+#>
+function New-VirtualMachines {
+    param(
+        [Parameter(Mandatory)]
+        [array]$VMList
+    )
+    foreach ($vm in $VMList) {
+        New-VirtualMachine -Name $vm.Name -MemoryGB $vm.MemoryGB -CPUs $vm.CPUs -DiskGB $vm.DiskGB
+    }
+}
 
 # Function: Create a new virtual machine.
 function New-VirtualMachine {
@@ -91,6 +126,19 @@ function New-VirtualMachine {
     }
     catch {
         Write-Log "Error while creating virtual machine '$Name'. Error details: $_" "ERROR"
+    }
+}
+
+<#
+Reusable function to create multiple networks from a hashtable array
+#>
+function New-VirtualNetworks {
+    param(
+        [Parameter(Mandatory)]
+        [array]$NetList
+    )
+    foreach ($net in $NetList) {
+        New-VirtualNetwork -Name $net.Name -Subnet $net.Subnet -Gateway $net.Gateway
     }
 }
 
@@ -182,27 +230,35 @@ function Install-WindowsServer {
     }
 }
 
+
 # ----------------------- SCRIPT EXECUTION STARTS HERE -----------------------
 
-# Log the start of the deployment process.
 Write-Log "Starting Home Lab Auto Deploy Script execution."
 
-# Create virtual networks.
+# Define networks and VMs as arrays of hashtables for easy expansion
+$Networks = @(
+    @{ Name = "ManagementNetwork"; Subnet = "192.168.1.0/24"; Gateway = "192.168.1.1" },
+    @{ Name = "InternalNetwork";   Subnet = "192.168.2.0/24"; Gateway = "192.168.2.1" }
+)
+$VMs = @(
+    @{ Name = "DC1";        MemoryGB = 4; CPUs = 2; DiskGB = 40 },
+    @{ Name = "WebServer1"; MemoryGB = 2; CPUs = 1; DiskGB = 20 },
+    @{ Name = "SQLServer1"; MemoryGB = 4; CPUs = 2; DiskGB = 40 }
+)
+
 Write-Log "Creating virtual networks..."
-New-VirtualNetwork -Name "ManagementNetwork" -Subnet "192.168.1.0/24" -Gateway "192.168.1.1"
-New-VirtualNetwork -Name "InternalNetwork" -Subnet "192.168.2.0/24" -Gateway "192.168.2.1"
+New-VirtualNetworks -NetList $Networks
 
-# Create virtual machines.
 Write-Log "Creating virtual machines..."
-New-VirtualMachine -Name "DC1"         -MemoryGB 4 -CPUs 2 -DiskGB 40
-New-VirtualMachine -Name "WebServer1"    -MemoryGB 2 -CPUs 1 -DiskGB 20
-New-VirtualMachine -Name "SQLServer1"    -MemoryGB 4 -CPUs 2 -DiskGB 40
+New-VirtualMachines -VMList $VMs
 
-# Configure Windows Server installations on VMs.
 Write-Log "Configuring Windows Server installation on VMs..."
-Install-WindowsServer -VMName "DC1"       -ISOPath $ISOPath
-Install-WindowsServer -VMName "WebServer1"  -ISOPath $ISOPath
-Install-WindowsServer -VMName "SQLServer1"  -ISOPath $ISOPath
+foreach ($vm in $VMs) {
+    Install-WindowsServer -VMName $vm.Name -ISOPath $ISOPath
+}
 
-# End of script processing.
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+Write-Host "Networks deployed: $($Networks | ForEach-Object { $_.Name } | Out-String)"
+Write-Host "VMs deployed: $($VMs | ForEach-Object { $_.Name } | Out-String)"
 Write-Log "Home Lab Auto Deploy Script completed."

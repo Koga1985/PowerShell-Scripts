@@ -30,7 +30,21 @@
 #==============================================
 # Global Logging Setup
 #==============================================
+
+# Logging: Define a global log file path where all events and error messages will be recorded.
 $Global:LogFile = "C:\Logs\VeeamBestPractices.log"
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
+# Check for Veeam PowerShell module
+if (-not (Get-Module -ListAvailable -Name Veeam.Backup.PowerShell)) {
+    Write-Host "ERROR: Veeam PowerShell module is not installed or loaded." -ForegroundColor Red
+    exit 1
+}
 
 function Write-Log {
     <#
@@ -54,6 +68,14 @@ function Write-Log {
 }
 
 # Log start of script
+
+# Helper function for step summary
+$Summary = @{}
+function Add-Summary {
+    param([string]$Step,[bool]$Success)
+    $Summary[$Step] = $Success
+}
+
 Write-Log "Starting Veeam Best Practices configuration..."
 
 #==============================================
@@ -87,7 +109,12 @@ function Set-VeeamSetting {
 # Set Backup Compression Level
 #==============================================
 Write-Log "Setting backup compression level to 'Optimal'..."
-Set-VeeamSetting -SettingName "CompressionLevel" -SettingValue "Optimal"
+try {
+    Set-VeeamSetting -SettingName "CompressionLevel" -SettingValue "Optimal"
+    Add-Summary "Set Backup Compression Level" $true
+} catch {
+    Add-Summary "Set Backup Compression Level" $false
+}
 
 #==============================================
 # Set Optimal Repository Settings
@@ -97,15 +124,16 @@ try {
     $repositories = Get-VBRRepository
     foreach ($repo in $repositories) {
         try {
-            # Adjust cache size and path for each repository.
             Set-VBRRepository -Repository $repo -CacheSize 1024GB -CachePath "C:\VeeamCache"
             Write-Log "Repository '$($repo.Name)' cache size set to 1024GB and cache path set to 'C:\VeeamCache'."
         } catch {
             Write-Log "Failed to set cache settings for repository '$($repo.Name)'. Error: $_" "ERROR"
         }
     }
+    Add-Summary "Set Optimal Repository Settings" $true
 } catch {
     Write-Log "Failed to retrieve Veeam repositories. Error: $_" "ERROR"
+    Add-Summary "Set Optimal Repository Settings" $false
 }
 
 #==============================================
@@ -115,8 +143,10 @@ Write-Log "Configuring WAN acceleration settings..."
 try {
     Set-VBRWANAccelerator -GlobalNetworkThrottlingMBps 100 -LocalCacheSizeGB 1024
     Write-Log "WAN acceleration settings configured successfully."
+    Add-Summary "Configure WAN Acceleration Settings" $true
 } catch {
     Write-Log "Failed to configure WAN acceleration settings. Error: $_" "ERROR"
+    Add-Summary "Configure WAN Acceleration Settings" $false
 }
 
 #==============================================
@@ -127,22 +157,28 @@ try {
     $jobs = Get-VBRJob
     foreach ($job in $jobs) {
         try {
-            # Enable integrity check by setting the BackupStorageOptions property.
             Set-VBRJobOptions -Job $job -BackupStorageOptions @{ "IntegrityCheck" = "true" }
             Write-Log "Backup integrity check enabled for job '$($job.Name)'."
         } catch {
             Write-Log "Failed to enable backup integrity check for job '$($job.Name)'. Error: $_" "ERROR"
         }
     }
+    Add-Summary "Enable Automatic Backup Integrity Checks" $true
 } catch {
     Write-Log "Failed to retrieve backup jobs. Error: $_" "ERROR"
+    Add-Summary "Enable Automatic Backup Integrity Checks" $false
 }
 
 #==============================================
 # Set Guest Interaction Proxy
 #==============================================
 Write-Log "Configuring guest interaction proxy..."
-Set-VeeamSetting -SettingName "GuestInteractionProxy" -SettingValue "VeeamGuestInteractionProxy"
+try {
+    Set-VeeamSetting -SettingName "GuestInteractionProxy" -SettingValue "VeeamGuestInteractionProxy"
+    Add-Summary "Set Guest Interaction Proxy" $true
+} catch {
+    Add-Summary "Set Guest Interaction Proxy" $false
+}
 
 #==============================================
 # Enable Parallel Processing for Backup Jobs
@@ -157,8 +193,10 @@ try {
             Write-Log "Failed to enable parallel processing for job '$($_.Name)'. Error: $_" "ERROR"
         }
     }
+    Add-Summary "Enable Parallel Processing for Backup Jobs" $true
 } catch {
     Write-Log "Failed to process backup jobs for parallel processing configuration. Error: $_" "ERROR"
+    Add-Summary "Enable Parallel Processing for Backup Jobs" $false
 }
 
 #==============================================
@@ -166,11 +204,12 @@ try {
 #==============================================
 Write-Log "Configuring SureBackup settings..."
 try {
-    # Assuming that SureBackup settings can be applied globally using advanced storage options.
     Set-VBRJobAdvancedStorageOptions -EnableInlineDeduplication $true
     Write-Log "SureBackup settings applied successfully with inline deduplication enabled."
+    Add-Summary "Configure SureBackup Settings" $true
 } catch {
     Write-Log "Failed to configure SureBackup settings. Error: $_" "ERROR"
+    Add-Summary "Configure SureBackup Settings" $false
 }
 
 #==============================================
@@ -186,8 +225,10 @@ try {
             Write-Log "Failed to enable storage encryption for job '$($_.Name)'. Error: $_" "ERROR"
         }
     }
+    Add-Summary "Enable Backup Copy Job Encryption" $true
 } catch {
     Write-Log "Failed to retrieve backup jobs for encryption settings. Error: $_" "ERROR"
+    Add-Summary "Enable Backup Copy Job Encryption" $false
 }
 
 #==============================================
@@ -197,16 +238,23 @@ Write-Log "Enabling per-VM backup chains..."
 try {
     Set-VBRGlobalOptions -EnablePerVMBackupChain $true
     Write-Log "Per-VM backup chains enabled successfully."
+    Add-Summary "Enable Per-VM Backup Chains" $true
 } catch {
     Write-Log "Failed to enable per-VM backup chains. Error: $_" "ERROR"
+    Add-Summary "Enable Per-VM Backup Chains" $false
 }
 
 #==============================================
 # Set vPower NFS Cache Settings
 #==============================================
 Write-Log "Configuring vPower NFS cache settings..."
-Set-VeeamSetting -SettingName "NFS.MaxDataSizeForDeltaBlockCachingMB" -SettingValue 512
-Set-VeeamSetting -SettingName "NFS.UseLegacyNFSWriteAlgorithm" -SettingValue $false
+try {
+    Set-VeeamSetting -SettingName "NFS.MaxDataSizeForDeltaBlockCachingMB" -SettingValue 512
+    Set-VeeamSetting -SettingName "NFS.UseLegacyNFSWriteAlgorithm" -SettingValue $false
+    Add-Summary "Set vPower NFS Cache Settings" $true
+} catch {
+    Add-Summary "Set vPower NFS Cache Settings" $false
+}
 
 #==============================================
 # Disable Automatic Product Update Checks
@@ -215,8 +263,16 @@ Write-Log "Disabling automatic check for product updates..."
 try {
     Set-VBRGlobalOptions -UpdateNotification $false
     Write-Log "Automatic product update checks disabled successfully."
+    Add-Summary "Disable Automatic Product Update Checks" $true
 } catch {
     Write-Log "Failed to disable automatic product update checks. Error: $_" "ERROR"
+    Add-Summary "Disable Automatic Product Update Checks" $false
 }
 
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($step in $Summary.Keys) {
+    Write-Host "$step: $($Summary[$step] ? 'Success' : 'Failed')"
+}
 Write-Log "Veeam Best Practices configuration completed successfully."

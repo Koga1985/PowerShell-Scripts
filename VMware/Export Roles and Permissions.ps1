@@ -51,6 +51,19 @@ function Write-Log {
 #==============================================
 # 1. Check for and Install VMware.PowerCLI Module if Needed
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+
+# Check for PowerShell version
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing..." -Level "INFO"
@@ -65,7 +78,6 @@ if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module is already installed." -Level "INFO"
 }
 
-# Import the PowerCLI module
 Write-Log -Message "Importing VMware.PowerCLI module..."
 try {
     Import-Module VMware.PowerCLI -ErrorAction Stop
@@ -101,14 +113,14 @@ $csvFilePath = Read-Host "Enter the path for exporting roles and permissions (e.
 #==============================================
 Write-Log -Message "Retrieving roles and permissions..."
 
+
+# Summary variable
+$Summary = $false
+
 try {
-    # Initialize an empty array to collect permissions.
     $rolesPermissions = @()
-    
-    # Retrieve all roles available
     Get-VIRole | ForEach-Object {
         $role = $_
-        # For each role, get the permissions; add a custom property 'RoleName'
         $permissions = Get-VIPermission -Role $role -ErrorAction SilentlyContinue | ForEach-Object {
             $_ | Add-Member -MemberType NoteProperty -Name "RoleName" -Value $role.Name -Force -PassThru
         }
@@ -116,17 +128,23 @@ try {
             $rolesPermissions += $permissions
         }
     }
-    
-    # Export the aggregated roles and permissions to the CSV file
     $rolesPermissions | Export-Csv -Path $csvFilePath -NoTypeInformation -ErrorAction Stop
     Write-Log -Message "Roles and permissions successfully exported to $csvFilePath." -Level "INFO"
+    $Summary = $true
 } catch {
     Write-Log -Message "Error exporting roles and permissions: $_" -Level "ERROR"
+    $Summary = $false
 }
 
 #==============================================
 # 5. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+Write-Host "Roles and permissions export: $($Summary ? 'Success' : 'Failed')"
+Write-Host "Export file: $csvFilePath"
+
 Write-Log -Message "Disconnecting from $server..."
 Disconnect-VIServer -Confirm:$false | Out-Null
 Write-Log -Message "Disconnected from $server." -Level "INFO"

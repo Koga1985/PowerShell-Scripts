@@ -58,6 +58,19 @@ function Write-Log {
 # Main Script Variables and Setup
 #==============================================
 
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
+# Check for Veeam PowerShell module
+if (-not (Get-Module -ListAvailable -Name Veeam.Backup.PowerShell)) {
+    Write-Host "ERROR: Veeam PowerShell module is not installed or loaded." -ForegroundColor Red
+    exit 1
+}
+
 # Define the destination folder for log files
 $destination = "C:\Log Files"
 
@@ -84,13 +97,13 @@ $logFilePath = Join-Path $destination "Veeam Job Results_$timestamp.log"
 #==============================================
 # Retrieve and Log Veeam Backup Sessions
 #==============================================
+
+# Summary variable
+$Summary = $false
+
 try {
-    # Retrieve backup sessions from the past 10 days
     $sessions = Get-VBRBackupSession | Where-Object { $_.CreationTime -ge (Get-Date).AddDays(-10) }
-    
     if ($sessions) {
-        # Select relevant properties and format the output.
-        # The calculated property 'BackupSize' is derived from the BackupStats property.
         $formattedSessions = $sessions |
             Select-Object JobName, JobType, CreationTime, Result, @{
                 Name = "BackupSize"
@@ -98,15 +111,19 @@ try {
             } |
             Sort-Object CreationTime |
             Format-Table | Out-String
-
-        # Write the formatted output to the log file.
         $formattedSessions | Out-File -FilePath $logFilePath -Append
-
-        # Log and display a success message
         Write-Log -Message "Job status written to: $logFilePath" -LogPath $logFilePath -Level "INFO"
+        $Summary = $true
     } else {
         Write-Log -Message "No backup sessions found within the last 10 days." -LogPath $logFilePath -Level "INFO"
+        $Summary = $true
     }
 } catch {
     Write-Log -Message "An error occurred while retrieving backup session data. Error: $_" -LogPath $logFilePath -Level "ERROR"
+    $Summary = $false
 }
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+Write-Host "Job status log: $logFilePath"
+Write-Host "Script completed: $($Summary ? 'Success' : 'Failed')"

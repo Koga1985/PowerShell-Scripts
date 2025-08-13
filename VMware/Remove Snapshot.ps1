@@ -48,6 +48,19 @@ function Write-Log {
 #==============================================
 # 1. Install VMware.PowerCLI Module if Not Installed
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit
+}
+
+# Check for PowerShell version
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
+    exit
+}
+
 Write-Log -Message "Checking for VMware.PowerCLI module..."
 if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
     Write-Log -Message "VMware.PowerCLI module not found. Installing..." -Level "INFO"
@@ -109,27 +122,45 @@ Write-Log -Message "Virtual machine '$vmName' found." -Level "INFO"
 #==============================================
 # 5. Get and Remove All Snapshots for the Virtual Machine
 #==============================================
+
+# Summary variable
+$Summary = @{}
+
 # Retrieve all snapshots associated with the VM
 $snapshots = Get-Snapshot -VM $vm
 if ($snapshots.Count -eq 0) {
     Write-Log -Message "No snapshots found for virtual machine '$vmName'." -Level "INFO"
+    $Summary['Snapshots Removed'] = 'None Found'
 } else {
     Write-Log -Message "Found $($snapshots.Count) snapshot(s) for VM '$vmName'. Removing snapshots..." -Level "INFO"
-    # Loop through each snapshot and remove it without confirmation (-Confirm:$false)
+    $removed = 0
+    $failed = 0
     foreach ($snapshot in $snapshots) {
         try {
             Write-Log -Message "Removing snapshot '$($snapshot.Name)' from VM '$vmName'..." -Level "INFO"
             Remove-Snapshot -Snapshot $snapshot -Confirm:$false -ErrorAction Stop
             Write-Log -Message "Snapshot '$($snapshot.Name)' removed successfully." -Level "INFO"
+            $removed++
         } catch {
             Write-Log -Message "Error removing snapshot '$($snapshot.Name)': $_" -Level "ERROR"
+            $failed++
         }
     }
+    $Summary['Snapshots Removed'] = $removed
+    $Summary['Snapshots Failed'] = $failed
 }
 
 #==============================================
 # 6. Disconnect from vCenter Server or ESXi Host
 #==============================================
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($key in $Summary.Keys) {
+    Write-Host "$key: $Summary[$key]"
+}
+Write-Host "Target VM: $vmName"
+
 Write-Log -Message "Disconnecting from $server..."
 try {
     Disconnect-VIServer -Confirm:$false | Out-Null

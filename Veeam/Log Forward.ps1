@@ -59,6 +59,13 @@ function Write-Log {
 #==============================================
 # Global Variables and Setup
 #==============================================
+
+# Check for admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
 # Define remote servers to process (update with actual server names)
 $servers = 'Server1', 'Server2'
 
@@ -88,45 +95,46 @@ if (-not (Test-Path -LiteralPath $localLogDir)) {
 #==============================================
 # Process Each Server
 #==============================================
+
+# Summary variable
+$Summary = @{}
+
 foreach ($server in $servers) {
     Write-Log -Message "Processing server: $server" -LogFile $errorLogPath
+    $success = $true
     try {
-        # Define source folder (remote Veeam logs directory) and destination folder (local storage per server)
         $source = "\\$server\C$\ProgramData\Veeam\Backup"
         $destination = Join-Path $localLogDir $server
-
-        # Ensure destination folder for the server exists
         if (-not (Test-Path -LiteralPath $destination)) {
             Write-Log -Message "Creating destination directory for $server: $destination" -LogFile $errorLogPath
             New-Item -Type Directory -Path $destination | Out-Null
         }
-        
-        # Get all files from the source directory recursively and filter by last write time
         Write-Log -Message "Copying backup log files from $source modified between $PreviousTime and $ScriptStart." -LogFile $errorLogPath
         $filesToCopy = Get-ChildItem -Path $source -Recurse -File | Where-Object {
             $_.LastWriteTime -lt $ScriptStart -and $_.LastWriteTime -gt $PreviousTime
         }
-        
-        # Copy each file from the remote server to the local destination folder
         foreach ($file in $filesToCopy) {
             $logFileName = $file.Name
             $destinationPath = Join-Path $destination $logFileName
             Write-Log -Message "Copying file: $logFileName to $destinationPath" -LogFile $errorLogPath
             Copy-Item -Path $file.FullName -Destination $destinationPath -ErrorAction Stop
         }
-        
-        # Retrieve Application event logs for the server within the time range
         Write-Log -Message "Retrieving Application event logs from $server from $PreviousTime to $ScriptStart." -LogFile $errorLogPath
         $eventLogs = Get-EventLog -LogName Application -After $PreviousTime -Before $ScriptStart -ComputerName $server |
                      Select-Object EventID, MachineName, Message
-        
-        # Export (append) event logs to the CSV file at the specified export path
         $eventLogs | Export-Csv -Path $ExportPath -Append -NoTypeInformation -Force
-        
         Write-Log -Message "Logs copied and event logs exported successfully for $server." -LogFile $errorLogPath
     }
     catch {
         $errorMessage = "Error occurred while processing $server: $_"
         Write-Log -Message $errorMessage -Level "ERROR" -LogFile $errorLogPath
+        $success = $false
     }
+    $Summary[$server] = $success
+}
+
+# Summary Output
+Write-Host "\nSummary:" -ForegroundColor Cyan
+foreach ($server in $servers) {
+    Write-Host "$server: $($Summary[$server] ? 'Success' : 'Failed')"
 }

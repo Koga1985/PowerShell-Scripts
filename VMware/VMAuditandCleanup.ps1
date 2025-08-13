@@ -83,23 +83,38 @@ param(
 )
 
 Begin {
+    # Admin rights check
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
+        exit 1
+    }
     # Version validation
     if ($PSVersionTable.PSVersion.Major -lt 7) {
-        Write-Error 'PowerShell 7+ is required for parallel execution.'
+        Write-Host 'ERROR: PowerShell 7+ is required for parallel execution.' -ForegroundColor Red
         exit 1
     }
     # Module check
     if (-not (Get-Module -ListAvailable VMware.PowerCLI)) {
-        Write-Error 'Please install VMware.PowerCLI: Install-Module VMware.PowerCLI'
+        Write-Host 'ERROR: Please install VMware.PowerCLI: Install-Module VMware.PowerCLI' -ForegroundColor Red
         exit 1
     }
-    Import-Module VMware.PowerCLI -ErrorAction Stop
+    try {
+        Import-Module VMware.PowerCLI -ErrorAction Stop
+    } catch {
+        Write-Host "ERROR: Failed to import VMware.PowerCLI: $_" -ForegroundColor Red
+        exit 1
+    }
 
     # Load config file if provided
     if ($ConfigFile -and (Test-Path $ConfigFile)) {
-        $cfg = Get-Content $ConfigFile | ConvertFrom-Json
-        foreach ($p in $cfg.PSObject.Properties.Name) {
-            if ($cfg.$p) { Set-Variable -Name $p -Value $cfg.$p -Scope Script }
+        try {
+            $cfg = Get-Content $ConfigFile | ConvertFrom-Json
+            foreach ($p in $cfg.PSObject.Properties.Name) {
+                if ($cfg.$p) { Set-Variable -Name $p -Value $cfg.$p -Scope Script }
+            }
+        } catch {
+            Write-Host "ERROR: Failed to load config file: $_" -ForegroundColor Red
+            exit 1
         }
     }
 
@@ -128,7 +143,12 @@ Begin {
 
     # Connect to vCenter
     Write-Log "Connecting to $VCenterServer"
-    Connect-VIServer -Server $VCenterServer -Credential $Credential -ErrorAction Stop | Out-Null
+    try {
+        Connect-VIServer -Server $VCenterServer -Credential $Credential -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Host "ERROR: Failed to connect to vCenter: $_" -ForegroundColor Red
+        exit 1
+    }
 }
 
 Process {
@@ -238,5 +258,14 @@ End {
     # Disconnect
     Disconnect-VIServer -Server * -Confirm:$false | Out-Null
 
-    Write-Output "Completed. Logs: $LogFile; CSV: $CsvReport"
+    # Console summary output
+    Write-Host "\nSummary:" -ForegroundColor Cyan
+    Write-Host "Total VMs processed: $($Metrics.TotalVMs)"
+    Write-Host "ISOs disconnected: $($Metrics.ISORemoved)"
+    Write-Host "Snapshots removed: $($Metrics.SnapshotsRemoved)"
+    Write-Host "Errors: $($Metrics.Errors)"
+    Write-Host "Logs: $LogFile"
+    Write-Host "CSV Report: $CsvReport"
+    Write-Host "HTML Report: $(Join-Path $LogDirectory "VM_Report_$timestamp.html")"
+    Write-Host "\nCompleted."
 }
