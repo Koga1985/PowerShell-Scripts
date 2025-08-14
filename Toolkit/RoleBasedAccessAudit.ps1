@@ -14,7 +14,7 @@ function Write-Log { param($Message); Write-Host "[AccessAudit] $Message" }
 foreach ($computer in $ComputerList) {
     Write-Log "Auditing roles/permissions on $computer..."
     # AD example
-    $adGroups = Get-ADUser -Filter * -Property MemberOf | Select-Object Name,MemberOf
+    Get-ADUser -Filter * -Property MemberOf | Select-Object Name,MemberOf | Out-Null
     # VMware/Veeam/Windows logic here
     # Export results to CSV
     # ...implementation needed...

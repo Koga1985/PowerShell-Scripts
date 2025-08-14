@@ -15,10 +15,10 @@ param (
     [string[]]$ComputerList
 )
 function Write-Log { param($Message); Write-Host "[DriftDetect] $Message" }
-$baseline = Get-Content $BaselineFile | ConvertFrom-Json
+Get-Content $BaselineFile | ConvertFrom-Json | Out-Null
 foreach ($computer in $ComputerList) {
     Write-Log "Checking $computer for drift..."
-    $current = Invoke-Command -ComputerName $computer -ScriptBlock { Get-ItemProperty -Path 'HKLM:\SOFTWARE\...' }
+    Invoke-Command -ComputerName $computer -ScriptBlock { Get-ItemProperty -Path 'HKLM:\SOFTWARE\...' } | Out-Null
     # Compare $current to $baseline and log differences
     # ...implementation needed...
 }

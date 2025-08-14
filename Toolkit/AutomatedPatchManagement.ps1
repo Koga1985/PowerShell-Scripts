@@ -28,7 +28,7 @@ function Write-Log {
     Add-Content -Path "PatchMgmt.log" -Value "$timestamp [$Level] $Message"
 }
 
-function Patch-Remote {
+function Invoke-RemotePatch {
     param(
         [string]$Computer
     )
@@ -44,7 +44,7 @@ function Patch-Remote {
         Write-Log -Message "Updates installed on $Computer. Result: $($result | Out-String)" -Level 'INFO'
         return $true
     } catch {
-        Write-Log -Message "Error patching $Computer: $_" -Level 'ERROR'
+    Write-Log -Message ("Error patching ${Computer}. Error: $($_)") -Level 'ERROR'
         return $false
     }
 }
@@ -58,7 +58,7 @@ if ($Schedule) {
 
 $summary = @{}
 foreach ($computer in $ComputerList) {
-    $success = Patch-Remote -Computer $computer
+    $success = Invoke-RemotePatch -Computer $computer
     $summary[$computer] = if ($success) { 'Success' } else { 'Failed' }
 }
 

@@ -15,7 +15,7 @@ param (
     [string]$BaselineFile
 )
 function Write-Log { param($Message); Write-Host "[SecBaseline] $Message" }
-$baseline = Get-Content $BaselineFile | ConvertFrom-Json
+Get-Content $BaselineFile | ConvertFrom-Json | Out-Null
 foreach ($computer in $ComputerList) {
     Write-Log "Applying baseline to $computer..."
     # Apply settings from $baseline
