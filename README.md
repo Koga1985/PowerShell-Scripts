@@ -1,66 +1,70 @@
-# PowerShell-Scripts
-# PowerShell Scripts
 
-Welcome to the **PowerShell Scripts** repository by **Koga1985**. This repository is a collection of various PowerShell scripts designed to help automate administrative tasks, streamline system management, and serve as examples for automation solutions on Windows-based systems.
+Can# PowerShell Scripts for IT Automation
 
 ## Overview
+This repository contains a comprehensive collection of PowerShell scripts designed to automate, secure, and manage IT environments. The scripts cover a wide range of tasks, including:
+- **Veeam Backup & Replication**: Job status, log management, best practices, and hardening.
+- **VMware vSphere/ESXi**: VM tagging, migration, health checks, snapshot management, audit and cleanup, and more.
+- **Windows Server & Desktop**: Service credential management, UAC configuration, SMBv1 disabling, AD self-healing, Cortana disabling, and other hardening tasks.
+- **Hyper-V**: Security hardening and STIG compliance.
+- **Lab Automation**: Automated deployment of home lab environments.
+- **Environment Toolkit**: One-line functions for everyday IT tasks.
 
-This repository contains scripts that address a variety of tasks such as:
-- Active Directory management
-- Service configuration and credential updates
-- System hardening (STIG compliance)
-- Reporting, logging, and event monitoring
-- And many more automation and administration scenarios
+Scripts are organized by technology and use case in subfolders for easy navigation.
 
-Each script is fully commented and designed to be easily modified to fit your specific environment.
+## Usage Instructions
+1. **Prerequisites**
+   - Run scripts in an elevated (Administrator) PowerShell session.
+   - Ensure required modules are installed:
+     - `Veeam.Backup.PowerShell` for Veeam scripts
+     - `VMware.PowerCLI` for VMware scripts
+     - `Hyper-V` module for Hyper-V scripts
+     - `ActiveDirectory` module for AD scripts
+   - Some scripts require network connectivity to remote servers or vCenter/ESXi hosts.
 
-## Getting Started
+2. **Running a Script**
+   - Open PowerShell as Administrator.
+   - Navigate to the script's folder.
+   - Review the script header for usage notes, parameters, and examples.
+   - Execute the script, providing required parameters if prompted.
+   - Example:
+     ```powershell
+     .\Job Status.ps1
+     .\VM Migration.ps1
+     .\Set UAC Level.ps1 -Level 2
+     ```
 
-### Prerequisites
+3. **Logging & Output**
+   - Most scripts log actions and errors to both the console and a log file (see script header for log location).
+   - Summary output is provided at the end of each script for quick review.
 
-Before using these scripts, ensure that you have:
-- [PowerShell 5.1](https://docs.microsoft.com/en-us/powershell/scripting/install/installing-windows-powershell) or later installed.
-- Administrative privileges (where required by the script).
-- Necessary modules installed (e.g., ActiveDirectory, VMware.PowerCLI, etc.).
-- Adequate testing in a non-production environment before deploying in a live environment.
+4. **Customization**
+   - Scripts are designed to be modular and easy to modify for your environment.
+   - Update variables (e.g., server names, paths) as needed.
+   - Inline comments and usage notes are included for clarity.
 
-### Usage
+## Disclaimer
 
-1. **Clone or download this repository:**
-   ```bash
-   git clone https://github.com/Koga1985/PowerShell-Scripts.git
-2. Review the README and documentation comments at the top of each script for prerequisites and usage instructions.
+> **Warning:**
+> These scripts are provided as-is, without warranty of any kind. Use at your own risk.
+> - Always test scripts in a non-production environment before deploying to production.
+> - The authors and contributors are not responsible for any damage, data loss, or security issues resulting from the use or misuse of these scripts.
+> - Review and understand each script before running, especially those that modify system or network configurations.
+> - Ensure you have appropriate backups and change management procedures in place.
 
-3. Run the desired script in PowerShell, ensuring that you run it with the required permissions.
+## Contributing
+- Pull requests and suggestions are welcome! Please ensure your contributions follow best practices for PowerShell scripting and include clear documentation.
 
-Scripts Included
-Below is a non-exhaustive list of scripts available in this repository:
+## License
+This repository is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
-AD Management Scripts: Scripts for creating, modifying, and reporting on Active Directory objects.
+## Contact
+For questions, issues, or feature requests, please open an issue on GitHub.
 
-Service Configuration Scripts: Tools for updating service credentials, restarting services, and setting policies.
+---
 
-Security and Hardening Scripts: Scripts to implement STIG recommendations, disable outdated protocols, and configure system security settings.
+**Author:** Dewain Smith #TheBeardedEngineer
+**Last Updated:** August 14, 2025
 
-Reporting Scripts: Tools for gathering system and event log data and exporting them to CSV, Excel, or HTML formats.
 
-Automation Utilities: A variety of utility scripts to handle self-healing tasks, automated maintenance, and other administrative tasks.
-
-For a complete list, please explore the repository contents.
-
-Disclaimer
-Disclaimer:
-The scripts contained in this repository are provided "as is", without warranty of any kind, either expressed or implied, including, but not limited to, the implied warranties of merchantability, fitness for a particular purpose, or non-infringement. Use these scripts at your own risk. The author, Koga1985, and any contributors to this repository assume no responsibility for any loss or damage resulting from the use or misuse of these scripts. It is strongly recommended that you test these scripts in a controlled environment before deploying them in production.
-
-Contributing
-Contributions to improve these scripts are welcome! If you have suggestions or have written new scripts that would be a useful addition to this repository:
-
-Fork the repository.
-
-Create a new branch for your changes.
-
-Submit a Pull Request with a detailed description of your changes.
-
-License
-This repository is distributed under the MIT License.
 
