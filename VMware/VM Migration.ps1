@@ -16,15 +16,14 @@
 
 .PARAMETER None
     The script is interactive; it prompts for all necessary details.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1 or later.
-      - VMware.PowerCLI module (the script installs it if not present).
-      - Sufficient permissions to connect to and modify objects on the vCenter Server or ESXi host.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 

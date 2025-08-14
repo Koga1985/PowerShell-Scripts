@@ -11,15 +11,14 @@
       5. Retrieves the virtual machine object and all its associated snapshots.
       6. If snapshots exist, it iterates over them and removes each one without confirmation.
       7. Disconnects from the vCenter/ESXi host.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1+.
-      - VMware.PowerCLI module (the script installs it if missing).
-      - Sufficient permissions to connect to the vCenter/ESXi host and modify VM snapshots.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 #==============================================

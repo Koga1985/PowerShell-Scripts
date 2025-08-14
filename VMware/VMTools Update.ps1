@@ -13,14 +13,14 @@
            - Otherwise, it logs that the Tools are up-to-date.
       6. Disconnects from the vCenter/ESXi host.
       
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1 or later.
-      - VMware.PowerCLI module (the script installs it if missing).
-      - Sufficient permissions to connect to the vCenter/ESXi host and to manage virtual machines.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 

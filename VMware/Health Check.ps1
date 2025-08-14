@@ -16,15 +16,14 @@
             - Orphaned VMs (VMs with inaccessible connection state)
       6. Exports the collected results to a CSV file.
       7. Disconnects from the vCenter/ESXi host.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1 or later.
-      - VMware.PowerCLI module (the script will install it if missing).
-      - Appropriate permissions to access and query the vCenter Server or ESXi host.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 #==============================================

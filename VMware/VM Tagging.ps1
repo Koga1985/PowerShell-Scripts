@@ -14,15 +14,14 @@
       5. Checks if the specified tag exists; if not, verifies (or creates) the tag category and creates the tag.
       6. Iterates over all VMs and assigns the tag.
       7. Disconnects from the vCenter Server/ESXi host.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1 or later.
-      - VMware.PowerCLI module.
-      - Appropriate permissions to connect to and modify tags on the vCenter Server/ESXi host.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 

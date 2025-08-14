@@ -12,14 +12,14 @@
       
     These settings align with basic Security Technical Implementation Guide (STIG) recommendations.
     
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - Script must be run as an administrator.
-      - Hyper-V must be installed and the Hyper-V PowerShell module must be available.
-      - The target system must support the VirtualMachinePlatform feature.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 #----------------------------------------------

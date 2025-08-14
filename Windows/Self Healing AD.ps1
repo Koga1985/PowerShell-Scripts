@@ -18,13 +18,14 @@
     PS C:\> .\Repair-AD.ps1
     The script will output status messages about the connectivity, replication health, and any remedial actions.
     
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-        - Administrative privileges.
-        - ActiveDirectory PowerShell module must be installed.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 function Repair-AD {

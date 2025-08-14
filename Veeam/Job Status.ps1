@@ -15,11 +15,14 @@
     - Veeam Backup & Replication PowerShell module must be installed and imported.
     - The account running this script must have permissions to query backup session data.
     - Adjust the $destination variable if you require a different log file location.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 #==============================================

@@ -66,6 +66,14 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
 param(
     [Parameter(Mandatory)][string]$VCenterServer,
+#
+.NOTES
+    Author:         Dewain Smith #TheBeardedEngineer
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
+    Version:        1.0
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
     [PSCredential]$Credential,
     [string[]]$VMName,
     [string]$VMFolder,

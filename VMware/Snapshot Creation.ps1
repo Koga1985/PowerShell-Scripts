@@ -16,14 +16,14 @@
 .PARAMETER None
     The script is interactive. User input is required at runtime for host connection and VM selection.
 
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
-    Prerequisites:
-      - PowerShell 5.1 or later.
-      - Administrative privileges and necessary permissions to manage vCenter/ESXi.
-      - Internet connectivity for module installation, if required.
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 

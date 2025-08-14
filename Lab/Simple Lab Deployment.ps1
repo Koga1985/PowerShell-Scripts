@@ -24,6 +24,14 @@
 
 .PARAMETER ISOPath
     Local or network path to the Windows Server installation ISO file.
+#
+.NOTES
+    Author:         Dewain Smith #TheBeardedEngineer
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
+    Version:        1.0
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 
 .NOTES
     Ensure that VMware PowerCLI is installed and connected to your vSphere environment before running this script.

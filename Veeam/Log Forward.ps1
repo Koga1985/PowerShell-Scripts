@@ -15,11 +15,14 @@
     - Sufficient permissions to access the remote servers and the required directories.
     - The remote servers must have the Veeam backup logs stored in the expected directory (e.g., "C:\ProgramData\Veeam\Backup").
     - Adjust server names, export paths, and log directories as needed.
-
+#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
+    Repository:     https://github.com/Koga1985/PowerShell-Scripts
+    License:        MIT
+    Last Updated:   August 14, 2025
     Version:        1.0
+    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
 #==============================================
