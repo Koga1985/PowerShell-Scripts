@@ -92,10 +92,14 @@ try {
 foreach ($userRecord in $users) {
     $userName = $userRecord.UserName
     Write-Log -Message "Attempting to add user '$userName' to group '$targetGroup'..."
-    
     try {
-        Add-ADGroupMember -Identity $targetGroup -Members $userName -ErrorAction Stop
-        Write-Log -Message "User '$userName' added to group '$targetGroup' successfully." -Level "INFO"
+        $adUser = Get-ADUser -Identity $userName -ErrorAction SilentlyContinue
+        if ($adUser) {
+            Add-ADGroupMember -Identity $targetGroup -Members $adUser -ErrorAction Stop
+            Write-Log -Message "User '$userName' added to group '$targetGroup' successfully." -Level "INFO"
+        } else {
+            Write-Log -Message "User '$userName' not found in Active Directory. Skipping." -Level "WARNING"
+        }
     } catch {
         Write-Log -Message "Error adding user '$userName' to group '$targetGroup': $_" -Level "ERROR"
     }

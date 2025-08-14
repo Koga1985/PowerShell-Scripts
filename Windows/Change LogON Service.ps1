@@ -40,60 +40,32 @@ Function Set-ServiceAcctCreds {
     param (
         [Parameter(Mandatory = $true)]
         [string]$strCompName,
-        
         [Parameter(Mandatory = $true)]
         [string]$strServiceName,
-        
         [Parameter(Mandatory = $true)]
         [string]$newAcct,
-        
         [Parameter(Mandatory = $true)]
         [string]$newPass
     )
-    
     try {
-        # Retrieve the service from the remote computer using CIM. 
-        # Win32_Service provides the Change method, which we use to update credentials.
         Write-Host "Retrieving service '$strServiceName' on computer '$strCompName'..."
         $service = Get-CimInstance -ComputerName $strCompName -ClassName Win32_Service -Filter "Name='$strServiceName'" -ErrorAction Stop
-
         if (-not $service) {
-            Write-Host "Service '$strServiceName' not found on computer '$strCompName'." -ForegroundColor Red
+            Write-Host "Service '$strServiceName' not found on '$strCompName'." -ForegroundColor Red
             return
         }
-        
-        # Update the service logon credentials by invoking the Change method.
-        # Only pass parameters that need to be changed; here, we update StartName and StartPassword.
-        Write-Host "Updating service credentials for '$strServiceName'..."
-        $changeResult = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{
-            StartName = $newAcct;
-            StartPassword = $newPass
-        }
-        
-        # Check the return code. A value of 0 indicates success.
-        if ($changeResult.ReturnValue -eq 0) {
-            Write-Host "Service credentials for '$strServiceName' updated successfully." -ForegroundColor Green
-        } else {
-            Write-Host "Failed to update credentials for '$strServiceName'. Return code: $($changeResult.ReturnValue)" -ForegroundColor Red
-            return
-        }
-        
-        # Restart the service to apply new credentials.
-        Write-Host "Stopping service '$strServiceName'..."
-        $stopResult = Invoke-CimMethod -InputObject $service -MethodName StopService
-        Start-Sleep -Seconds 5  # Allow some time for the service to fully stop
-        Write-Host "Starting service '$strServiceName'..."
-        $startResult = Invoke-CimMethod -InputObject $service -MethodName StartService
-        
-        if ($startResult.ReturnValue -eq 0) {
+        Write-Host "Updating logon credentials for service '$strServiceName'..."
+        $result = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{StartName=$newAcct; StartPassword=$newPass} -ErrorAction Stop
+        if ($result.ReturnValue -eq 0) {
+            Write-Host "Logon credentials updated successfully for service '$strServiceName'." -ForegroundColor Green
+            Write-Host "Restarting service '$strServiceName'..."
+            Restart-Service -ComputerName $strCompName -Name $strServiceName -ErrorAction Stop
             Write-Host "Service '$strServiceName' restarted successfully." -ForegroundColor Green
         } else {
-            Write-Host "Service '$strServiceName' failed to restart. Return code: $($startResult.ReturnValue)" -ForegroundColor Red
+            Write-Host "Failed to update credentials. ReturnValue: $($result.ReturnValue)" -ForegroundColor Red
         }
-    }
-    catch {
+    } catch {
         Write-Host "Error: $_" -ForegroundColor Red
-        # Add additional error handling or logging as needed.
     }
 }
 

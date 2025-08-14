@@ -143,25 +143,27 @@ function Set-UACLevel {
             $desktopValue = 0
         }
         1 {
-            $consentValue = 5
+            $consentValue = 1
             $desktopValue = 0
         }
         2 {
-            $consentValue = 5
+            $consentValue = 2
             $desktopValue = 1
         }
         3 {
             $consentValue = 2
             $desktopValue = 1
         }
+        default {
+            Write-Log -Message "Invalid UAC level specified: $Level" -Level "ERROR"
+            return
+        }
     }
-    
     # Log the intended changes
     if ($PSCmdlet.ShouldProcess("UAC Level $Level", "Set ConsentPromptBehaviorAdmin = $consentValue and PromptOnSecureDesktop = $desktopValue")) {
         Set-RegistryValue -Key $global:UACRegistryPath -Name $global:ConsentPromptBehaviorAdmin_Name -Value $consentValue
         Set-RegistryValue -Key $global:UACRegistryPath -Name $global:PromptOnSecureDesktop_Name -Value $desktopValue
     }
-    
     # Return the current UAC level description
     $currentLevel = Get-UACLevel
     Write-Log -Message "Current UAC configuration: $currentLevel" -Level "INFO"

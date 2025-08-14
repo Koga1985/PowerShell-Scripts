@@ -55,13 +55,52 @@ function Write-Log {
     <#
     .SYNOPSIS
         Outputs a timestamped log message with a specified severity level.
-        
-    .PARAMETER Message
-        The log message text.
-        
-    .PARAMETER Level
-        The severity level (e.g., "INFO", "ERROR"). Default is "INFO".
-    #>
+        <#
+        .SYNOPSIS
+            Writes a timestamped log message with a specified severity level.
+        .PARAMETER Message
+            The log message text.
+        .PARAMETER Level
+            The severity level (INFO, ERROR, etc.). Default is INFO.
+        #>
+        param (
+            [Parameter(Mandatory = $true)]
+            [string]$Message,
+            [ValidateSet('INFO','ERROR','WARNING')]
+            [string]$Level = "INFO"
+        )
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "$timestamp [$Level] $Message"
+    }
+
+    # Ensure running as admin
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Log -Message "Script must be run as Administrator." -Level "ERROR"
+        exit 1
+    }
+
+    try {
+        Write-Log -Message "Retrieving service '$ServiceName'..."
+        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$ServiceName'" -ErrorAction Stop
+        if (-not $service) {
+            Write-Log -Message "Service '$ServiceName' not found." -Level "ERROR"
+            exit 1
+        }
+        Write-Log -Message "Updating logon credentials for service '$ServiceName'..."
+        $result = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{StartName=$Account; StartPassword=$Password} -ErrorAction Stop
+        if ($result.ReturnValue -eq 0) {
+            Write-Log -Message "Logon credentials updated successfully for service '$ServiceName'." -Level "INFO"
+            Write-Log -Message "Restarting service '$ServiceName'..."
+            Restart-Service -Name $ServiceName -ErrorAction Stop
+            Write-Log -Message "Service '$ServiceName' restarted successfully." -Level "INFO"
+        } else {
+            Write-Log -Message "Failed to update credentials. ReturnValue: $($result.ReturnValue)" -Level "ERROR"
+            exit 1
+        }
+    } catch {
+        Write-Log -Message "Error: $_" -Level "ERROR"
+        exit 1
+    }
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,

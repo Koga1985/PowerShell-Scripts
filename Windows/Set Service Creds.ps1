@@ -37,106 +37,51 @@
 param (
     [alias('computer', 'c')]
     [string]$computerName = $env:COMPUTERNAME,
-    
     [alias('username', 'u')]
     [string]$serviceUsername = "$env:USERDOMAIN\$env:USERNAME",
-    
     [alias('password', 'p')]
     [Parameter(Mandatory = $true)]
     [securestring]$servicePassword
 )
 
-#----------------------------------------------
-# Global Logging Function
-#----------------------------------------------
 function Write-Log {
     <#
     .SYNOPSIS
         Writes a log message with a timestamp and specified severity level.
-        
     .PARAMETER Message
         The log message text.
-        
     .PARAMETER Level
-        The severity level (e.g., "INFO", "ERROR"). Defaults to "INFO".
+        The severity level (INFO, ERROR, etc.). Default is INFO.
     #>
     param (
         [Parameter(Mandatory = $true)]
         [string]$Message,
+        [ValidateSet('INFO','ERROR','WARNING')]
         [string]$Level = "INFO"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Host "$timestamp [$Level] $Message"
 }
 
-Write-Log -Message "Starting service credential update process on '$computerName' for account '$serviceUsername'." -Level "INFO"
-
-#----------------------------------------------
-# Invoke-Command to Update Service Credentials on the Target Computer
-#----------------------------------------------
-Invoke-Command -ComputerName $computerName -Credential "$env:USERDOMAIN\$env:USERNAME" -ScriptBlock {
-    param (
-        [string]$computerName,
-        [string]$serviceUsername,
-        [securestring]$servicePassword
-    )
-
-    Write-Host "Retrieving services running under account '$serviceUsername' on $computerName..."
-    try {
-        # Retrieve the services with a filter based on the StartName property matching the specified serviceUsername.
-        $services = Get-CimInstance -ClassName Win32_Service -Filter "StartName='$serviceUsername'" -ErrorAction Stop
-    } catch {
-        Write-Host "Error retrieving services: $_" -ForegroundColor Red
+try {
+    Write-Log -Message "Retrieving services running under '$serviceUsername' on '$computerName'..."
+    $services = Get-CimInstance -ComputerName $computerName -ClassName Win32_Service | Where-Object { $_.StartName -eq $serviceUsername }
+    if (-not $services) {
+        Write-Log -Message "No services found running under '$serviceUsername' on '$computerName'." -Level "WARNING"
         return
     }
-    
     foreach ($svc in $services) {
-        Write-Host ("Updating credentials for service: {0} (running as: {1}) on host: {2}." -f $svc.Name, $serviceUsername, $computerName)
-        
-        try {
-            # Update the service logon credentials using the Change() method.
-            # Only the StartName and StartPassword parameters are being updated; other parameters remain unchanged (passed as $null).
-            $changeResult = Invoke-CimMethod -InputObject $svc -MethodName Change -Arguments @{
-                StartName     = $serviceUsername;
-                StartPassword = $servicePassword
-            } -ErrorAction Stop
-            
-            if ($changeResult.ReturnValue -eq 0) {
-                Write-Host "Service credential change accepted."
-                # If the service is running, stop and restart it to apply the new credentials.
-                if ($svc.State -eq "Running") {
-                    Write-Host ("Restarting service {0} to apply credential changes." -f $svc.Name)
-                    
-                    # Stop the service
-                    $stopResult = Invoke-CimMethod -InputObject $svc -MethodName StopService -ErrorAction Stop
-                    if ($stopResult.ReturnValue -eq 0) {
-                        Write-Host -NoNewline "Service stopped. Waiting for the service to stop "
-                        # Poll until the service state becomes 'Stopped'
-                        do {
-                            Start-Sleep -Seconds 2
-                            $currentSvcState = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$($svc.Name)'").State
-                            Write-Host -NoNewline "."
-                        } while ($currentSvcState -ne "Stopped")
-                        Write-Host "Stopped."
-                        
-                        # Start the service
-                        $startResult = Invoke-CimMethod -InputObject $svc -MethodName StartService -ErrorAction Stop
-                        if ($startResult.ReturnValue -eq 0) {
-                            Write-Host "Service started successfully."
-                        } else {
-                            Write-Host ("Failed to start service. Return code: {0}" -f $startResult.ReturnValue) -ForegroundColor Red
-                        }
-                    } else {
-                        Write-Host ("Failed to stop service. Return code: {0}" -f $stopResult.ReturnValue) -ForegroundColor Red
-                    }
-                }
-            } else {
-                Write-Host ("Failed to change service credentials. Change() returned code: {0}" -f $changeResult.ReturnValue) -ForegroundColor Red
-            }
-        } catch {
-            Write-Host "Error updating credentials for service '$($svc.Name)': $_" -ForegroundColor Red
+        Write-Log -Message "Updating credentials for service '$($svc.Name)'..."
+        $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($servicePassword))
+        $result = Invoke-CimMethod -InputObject $svc -MethodName Change -Arguments @{StartName=$serviceUsername; StartPassword=$plainPassword} -ErrorAction Stop
+        if ($result.ReturnValue -eq 0) {
+            Write-Log -Message "Credentials updated for service '$($svc.Name)'. Restarting service..." -Level "INFO"
+            Restart-Service -ComputerName $computerName -Name $svc.Name -ErrorAction Stop
+            Write-Log -Message "Service '$($svc.Name)' restarted successfully." -Level "INFO"
+        } else {
+            Write-Log -Message "Failed to update credentials for service '$($svc.Name)'. ReturnValue: $($result.ReturnValue)" -Level "ERROR"
         }
     }
-} -ArgumentList $computerName, $serviceUsername, $servicePassword
-
-Write-Log -Message "Service credential update process completed on '$computerName'." -Level "INFO"
+} catch {
+    Write-Log -Message "Error: $_" -Level "ERROR"
+}
