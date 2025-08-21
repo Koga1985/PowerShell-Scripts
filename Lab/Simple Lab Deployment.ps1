@@ -1,41 +1,29 @@
-<# 
+<#
 .SYNOPSIS
-    Auto Deploy Home Lab Script for VMware environments.
+    Auto Deploy Home Lab Script for VMware environments (NIST/STIG-aligned).
 
 .DESCRIPTION
-    This script automates the deployment of a home lab environment on a VMware vSphere or ESXi host.
-    It includes functions to create virtual networks and virtual machines, and to configure Windows Server 
-    installation using an ISO file attached to the VM’s CD drive.
-
-    Enhancements:
-    - Added detailed inline comments for clarity.
-    - Introduced logging functions to write events and errors to a log file.
-    - Improved error handling within each function.
-    - Uses Write-Verbose for additional runtime information; run the script with -Verbose flag for detailed output.
+    Automates deployment of a home lab on VMware vSphere/ESXi. Functions for creating virtual networks, VMs, and configuring Windows Server installation via ISO.
+    All actions use robust error handling, input validation, and logging. Run with least privilege and review for compliance.
 
 .PARAMETER VMHost
     The name or IP of the VMware ESXi host or vCenter Server.
-
 .PARAMETER VMFolder
     The folder or location within vCenter where the virtual machines will be deployed.
-
 .PARAMETER Datastore
     The datastore name where the VM files will be stored.
-
 .PARAMETER ISOPath
     Local or network path to the Windows Server installation ISO file.
-#
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
     Repository:     https://github.com/Koga1985/PowerShell-Scripts
     License:        MIT
-    Last Updated:   August 14, 2025
-    Version:        1.0
-    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
-
-.NOTES
-    Ensure that VMware PowerCLI is installed and connected to your vSphere environment before running this script.
-    Adjust the commands if your environment uses different cmdlet names or modules.
+    Last Updated:   2025-08-20
+    Version:        1.1
+    Compliance:     NIST SP 800-53, STIG PowerShell Security Requirements
+    Security:       Input validation, logging, no hardcoded credentials, least privilege
+    Disclaimer:     Scripts are provided as-is. Review for your environment and compliance needs.
+    Ensure VMware PowerCLI is installed and connected to your vSphere environment before running. Adjust commands for your environment.
 #>
 
 

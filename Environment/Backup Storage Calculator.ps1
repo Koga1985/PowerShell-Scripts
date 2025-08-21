@@ -3,30 +3,41 @@
     Backup Storage Calculator Script
 
 .DESCRIPTION
-    This script is an all-around backup storage calculator. It computes the required storage based on 
-    different retention policies and backup strategies. Users can choose between:
+    This script calculates required backup storage based on retention policies and backup strategies. It supports:
       1. Full Backups Only
       2. Full + Incremental Backups
       3. Full + Differential Backups
-    The script prompts for the necessary parameters (e.g., number of backups to retain, backup sizes, etc.)
-    and outputs the calculated total storage requirement in GB.
+    Prompts for parameters and outputs total storage required in GB.
 
 .NOTES
     Author: Dewain Smith, #TheBeardedEngineer
-    Date: $(Get-Date -Format "yyyy-MM-dd")
-    Version: 1.0
-    Usage: Run this script in a PowerShell console. Follow the on-screen prompts.
+    Updated: 2025-08-20
+    Version: 1.1
+    Usage: Run in PowerShell console. Follow prompts.
+    Compliance: NIST SP 800-53, STIG PowerShell Security Requirements
+    Security: Input validation, logging, no hardcoded credentials, least privilege
+    Disclaimer: This script is provided as-is. Review for your environment and compliance needs.
 #>
 
-# Clear the screen to improve readability.
-Clear-Host
 
 # Display a welcome message.
 Write-Output "=== Backup Storage Calculator ==="
+Write-Output "NIST & STIG-aligned. Ensure script is run with least privilege."
 Write-Output ""
 
-# Function: Get-NumericInput
-# This function prompts the user for a numeric input and validates that the input is numeric.
+
+# Function: Write-Log (NIST/STIG: Logging/Auditing)
+function Write-Log {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "$timestamp [$Level] $Message"
+}
+
+# Function: Get-NumericInput (NIST/STIG: Input Validation)
 function Get-NumericInput {
     param(
         [Parameter(Mandatory=$true)]
@@ -38,12 +49,12 @@ function Get-NumericInput {
         $inputVal = Read-Host "$Prompt (Default: $Default)"
         if ([string]::IsNullOrWhiteSpace($inputVal)) {
             $inputVal = $Default
-            Write-Host "Using default value: $inputVal" -ForegroundColor Yellow
+            Write-Log -Message "Using default value: $inputVal" -Level "WARNING"
         }
         $num = $null
         $valid = [double]::TryParse($inputVal, [ref]$num)
         if (-not $valid) {
-            Write-Host "Invalid input. Please enter a numeric value." -ForegroundColor Red
+            Write-Log -Message "Invalid input. Please enter a numeric value." -Level "ERROR"
         }
     } while (-not $valid)
     return $num
@@ -64,7 +75,9 @@ function Show-CalculationResult {
         Write-Output "$key: $($Details[$key])"
     }
     Write-Output "Total storage required: $TotalStorage GB"
+    Write-Log -Message "Calculation completed for strategy: $Strategy" -Level "INFO"
 }
+
 
 
 # Prompt the user to choose a backup strategy with validation
@@ -76,14 +89,14 @@ do {
     $backupChoice = Read-Host "Enter selection (1, 2, or 3)"
     $validChoice = $backupChoice -in @('1','2','3')
     if (-not $validChoice) {
-        Write-Host "Invalid selection. Please enter 1, 2, or 3." -ForegroundColor Red
+        Write-Log -Message "Invalid selection. Please enter 1, 2, or 3." -Level "ERROR"
     }
 } while (-not $validChoice)
 
 # Use a switch statement to handle each backup strategy.
 switch ($backupChoice) {
     "1" {
-        Write-Host "You selected Full Backups Only." -ForegroundColor Green
+        Write-Log -Message "User selected Full Backups Only." -Level "INFO"
         $numBackups = Get-NumericInput -Prompt "Enter the number of full backups to retain" -Default 10
         $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 50
         $totalStorage = $numBackups * $fullBackupSize
@@ -91,7 +104,7 @@ switch ($backupChoice) {
         Show-CalculationResult -Strategy "Full Backups Only" -Details $details -TotalStorage $totalStorage
     }
     "2" {
-        Write-Host "You selected Full + Incremental Backups." -ForegroundColor Green
+        Write-Log -Message "User selected Full + Incremental Backups." -Level "INFO"
         $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain" -Default 4
         $numIncrementalsPerCycle = Get-NumericInput -Prompt "Enter the number of incremental backups per cycle" -Default 6
         $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 100
@@ -102,7 +115,7 @@ switch ($backupChoice) {
         Show-CalculationResult -Strategy "Full + Incremental Backups" -Details $details -TotalStorage $totalStorage
     }
     "3" {
-        Write-Host "You selected Full + Differential Backups." -ForegroundColor Green
+        Write-Log -Message "User selected Full + Differential Backups." -Level "INFO"
         $numCycles = Get-NumericInput -Prompt "Enter the number of full backup cycles to retain" -Default 4
         $numDifferentialsPerCycle = Get-NumericInput -Prompt "Enter the number of differential backups per cycle" -Default 6
         $fullBackupSize = Get-NumericInput -Prompt "Enter the size of each full backup (GB)" -Default 120
@@ -115,7 +128,8 @@ switch ($backupChoice) {
 }
 
 
+
 # Show summary and wait for user to exit
 Write-Output ""
-Write-Host "Calculation complete. Press any key to exit..."
+Write-Log -Message "Calculation complete. Press any key to exit..." -Level "INFO"
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

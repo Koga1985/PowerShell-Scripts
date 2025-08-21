@@ -1,31 +1,33 @@
 <#
 .SYNOPSIS
-    Implements basic STIG recommendations for Hyper-V security configuration.
+    Implements STIG and NIST-aligned security configuration for Hyper-V.
 
 .DESCRIPTION
-    This script applies several recommended security settings for a Hyper-V host, including:
-      1. Enabling the VirtualMachinePlatform feature (used by Credential Guard / virtualization-based security).
-      2. Enabling Enhanced Session Mode and Guest Services on the Hyper-V host.
-      3. Disabling named pipe connections (COM ports) for VMs to reduce their exposure.
-      4. Disabling clipboard integration for VMs to mitigate data exfiltration risks.
-      5. Configuring VMs to use the HvSocket transport type for Enhanced Session Mode (disabling the default Enhanced Session Mode).
-      
-    These settings align with basic Security Technical Implementation Guide (STIG) recommendations.
-    
-#
+    Applies recommended security settings for Hyper-V hosts:
+      1. Enables VirtualMachinePlatform feature (Credential Guard, VBS).
+      2. Enables Enhanced Session Mode and Guest Services.
+      3. Disables named pipe connections (COM ports) for VMs.
+      4. Disables clipboard integration for VMs.
+      5. Configures HvSocket transport for Enhanced Session Mode.
+    All actions use robust error handling, logging, and input validation.
+
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
     Repository:     https://github.com/Koga1985/PowerShell-Scripts
     License:        MIT
-    Last Updated:   August 14, 2025
-    Version:        1.0
-    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
+    Last Updated:   2025-08-20
+    Version:        1.1
+    Compliance:     NIST SP 800-53, STIG PowerShell Security Requirements
+    Security:       Input validation, logging, no hardcoded credentials, least privilege
+    Disclaimer:     Scripts are provided as-is. Review for your environment and compliance needs.
 #>
 
 #----------------------------------------------
 <#
 Checks for admin rights and Hyper-V module before running.
 #>
+
+# Check for admin rights and Hyper-V module before running (NIST/STIG: Least Privilege)
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
     exit 1
@@ -41,10 +43,8 @@ function Write-Log {
     <#
     .SYNOPSIS
         Outputs a timestamped log message with a severity level.
-    
     .PARAMETER Message
         The message text.
-    
     .PARAMETER Level
         The message severity (e.g., "INFO", "ERROR"). Default is "INFO".
     #>
