@@ -1,290 +1,401 @@
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Retrieves logon and logoff events from a specified computer's Security event log and outputs the results.
+    Retrieves logon and logoff events from a specified computer's Security event log.
 
 .DESCRIPTION
-    This script performs the following actions:
-      1. Creates a DataTable to capture logon/logoff activity with columns for Date, Type, Status, User, and IPAddress.
-      2. Prompts the user for:
-          - The target computer name or IP (defaults to local if blank).
-          - The start date (defaults to 1/1/2000 if blank).
-          - The end date (defaults to the current date/time if blank).
-          - Whether to print only failed logins.
-          - The desired output type (Table, GridView, HTML, or List).
-      3. Retrieves Security event log entries from the target computer within the specified date range.
-      4. Depending on the user's choice, filters events:
-          - If "only failed logins" is chosen, only events with failure (EventID 4625) are processed.
-          - Otherwise, it processes both successful (4624) and failed (4625) logon events, as well as logoffs (4647).
-      5. Populates the DataTable with the relevant event data.
-      6. Outputs the data in the selected format:
-          - Table: Uses Format-Table.
-          - GridView: Uses Out-GridView.
-          - HTML: Converts the table to HTML with custom styling.
-          - Default (List): Outputs the raw DataTable object.
+    This script performs comprehensive logon activity analysis by:
+      1. Querying Security event log for logon (4624), logoff (4647), and failed logon (4625) events
+      2. Filtering events by date range and success/failure status
+      3. Parsing event data including user, IP address, and logon type
+      4. Outputting results in multiple formats: Table, GridView, HTML, or JSON
 
-.PARAMETER None
-    This script runs interactively; all required inputs are requested from the user.
+.PARAMETER ComputerName
+    Target computer name or IP. Defaults to local computer if not specified.
+
+.PARAMETER StartDate
+    Start date for log analysis. Defaults to 30 days ago.
+
+.PARAMETER EndDate
+    End date for log analysis. Defaults to current date/time.
+
+.PARAMETER FailedOnly
+    If specified, only failed logon attempts are returned.
+
+.PARAMETER OutputFormat
+    Output format: Table, GridView, HTML, or JSON. Default is Table.
+
+.PARAMETER ExportPath
+    Optional path for exported HTML or JSON output.
 
 .EXAMPLE
-    PS C:\> .\Get-LogonActivity.ps1
-    Follow prompts to enter the computer name, start and end dates, filtering and output options.
+    .\Security Log LogOn LogOff.ps1
+    Retrieves all logon/logoff events from local computer for the last 30 days.
+
+.EXAMPLE
+    .\Security Log LogOn LogOff.ps1 -ComputerName "Server01" -FailedOnly -OutputFormat HTML -ExportPath "C:\Reports\FailedLogins.html"
+    Exports failed login attempts from Server01 to an HTML report.
+
+.EXAMPLE
+    .\Security Log LogOn LogOff.ps1 -StartDate "01/01/2025" -EndDate "01/31/2025" -OutputFormat GridView
+    Displays January 2025 logon activity in an interactive grid.
 
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
-    Updated:        2025-04-14
-    Version:        1.0
+    Updated:        October 30, 2025
+    Version:        2.0
     Prerequisites:
-      - Administrative privileges.
-      - Access to the Security event log on the target computer.
+      - PowerShell 5.1 or higher
+      - Administrator privileges required
+      - Access to Security event log on target computer
+
+.SECURITY FEATURES
+    - Requires Administrator privileges via #Requires directive
+    - Comprehensive audit logging to file and Windows Event Log
+    - Full session transcript for compliance
+    - Input validation and sanitization
+    - Secure error handling with proper cleanup
+    - Read-only security log access (no modifications)
+
+.COMPLIANCE
+    - Aligns with NIST SP 800-53 controls (AU-2, AU-3, AU-6: Audit Events, Content, Review)
+    - Supports DISA STIG requirements for security log monitoring
+    - Full audit trail for compliance reporting
 #>
 
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ComputerName = $env:COMPUTERNAME,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateNotNull()]
+    [datetime]$StartDate = (Get-Date).AddDays(-30),
+
+    [Parameter(Mandatory = $false)]
+    [ValidateNotNull()]
+    [datetime]$EndDate = (Get-Date),
+
+    [Parameter(Mandatory = $false)]
+    [switch]$FailedOnly,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('Table', 'GridView', 'HTML', 'JSON')]
+    [string]$OutputFormat = 'Table',
+
+    [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ExportPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 #----------------------------------------------
-# Global Logging Function
+# Initialize Transcript and Audit Logging
 #----------------------------------------------
-function Write-Log {
-    <#
-    .SYNOPSIS
-        Outputs a timestamped log message with a specified severity level.
-    
-    .PARAMETER Message
-        The message text.
-    
-    .PARAMETER Level
-        The severity level, e.g., "INFO", "WARNING", or "ERROR". Default is "INFO".
-    #>
+$transcriptPath = Join-Path $env:TEMP "SecurityLogAnalysis_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+Start-Transcript -Path $transcriptPath -NoClobber
+
+$script:AuditLogPath = "C:\Windows\Logs\Security\SecurityLogAnalysis_Audit.log"
+$script:EventSource = "SecurityLogAnalysis"
+
+# Ensure audit log directory exists
+$auditLogDir = Split-Path -Parent $script:AuditLogPath
+if (-not (Test-Path -Path $auditLogDir)) {
+    New-Item -Path $auditLogDir -ItemType Directory -Force | Out-Null
+}
+
+# Create event source if it doesn't exist
+try {
+    if (-not [System.Diagnostics.EventLog]::SourceExists($script:EventSource)) {
+        New-EventLog -LogName Application -Source $script:EventSource -ErrorAction SilentlyContinue
+    }
+} catch {
+    Write-Warning "Unable to create event log source. Event logging will be limited."
+}
+
+#----------------------------------------------
+# Comprehensive Audit Logging Function
+#----------------------------------------------
+function Write-AuditLog {
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Message,
-        [string]$Level = "INFO"
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('INFO', 'WARNING', 'ERROR', 'SUCCESS')]
+        [string]$Level = 'INFO',
+
+        [Parameter(Mandatory = $false)]
+        [int]$EventId = 1000
     )
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "$timestamp [$Level] $Message"
-}
+    $userName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $computerName = $env:COMPUTERNAME
 
-Write-Log -Message "Starting Logon/Logoff Activity Report script." -Level "INFO"
+    $logEntry = "$timestamp [$Level] [$userName@$computerName] $Message"
 
-#----------------------------------------------
-# 1. Create a DataTable for Logon/Logoff Activity
-#----------------------------------------------
-try {
-    Write-Log -Message "Creating DataTable to store logon/logoff events..."
-    $LogonActivityTable = New-Object System.Data.DataTable "Logon/Logoff Activity"
-    
-    # Define columns for date, type, status, user, and IP address
-    $colDate = New-Object System.Data.DataColumn "Date", ([string])
-    $colType = New-Object System.Data.DataColumn "Type", ([string])
-    $colStatus = New-Object System.Data.DataColumn "Status", ([string])
-    $colUser = New-Object System.Data.DataColumn "User", ([string])
-    $colIPAddress = New-Object System.Data.DataColumn "IPAddress", ([string])
-    
-    # Add columns to the DataTable
-    $LogonActivityTable.Columns.Add($colDate)   | Out-Null
-    $LogonActivityTable.Columns.Add($colType)   | Out-Null
-    $LogonActivityTable.Columns.Add($colStatus) | Out-Null
-    $LogonActivityTable.Columns.Add($colUser)   | Out-Null
-    $LogonActivityTable.Columns.Add($colIPAddress) | Out-Null
-
-    Write-Log -Message "DataTable created successfully." -Level "INFO"
-} catch {
-    Write-Log -Message "Error creating DataTable: $_" -Level "ERROR"
-    exit
-}
-
-#----------------------------------------------
-# 2. Prompt for User Input Parameters
-#----------------------------------------------
-# Prompt for the target computer name; default to local if blank.
-$hostname = Read-Host "Enter the IP or hostname of the computer you wish to scan (Leave blank for local)"
-if ([string]::IsNullOrWhiteSpace($hostname)) {
-    $hostname = $env:COMPUTERNAME
-    Write-Log -Message "No hostname provided. Defaulting to local machine: $hostname." -Level "INFO"
-} else {
-    Write-Log -Message "Scanning computer: $hostname." -Level "INFO"
-}
-
-# Prompt for the start date for scanning; default to January 1, 2000 if left blank.
-$startInput = Read-Host "Enter the start date to scan from (MM/DD/YYYY, default 1/1/2000)"
-if ([string]::IsNullOrWhiteSpace($startInput)) {
-    $startInput = "1/1/2000"
-    Write-Log -Message "No start date provided. Defaulting to 1/1/2000." -Level "INFO"
-}
-try {
-    $startDate = Get-Date $startInput -ErrorAction Stop
-    Write-Log -Message "Start date set to: $startDate." -Level "INFO"
-} catch {
-    Write-Log -Message "Invalid start date format. Error: $_" -Level "ERROR"
-    exit
-}
-
-# Prompt for the end date for scanning; default to current date/time if left blank.
-$endInput = Read-Host "Enter the end date to scan to (MM/DD/YYYY, default current time)"
-if ([string]::IsNullOrWhiteSpace($endInput)) {
-    $endDate = Get-Date
-    Write-Log -Message "No end date provided. Defaulting to current date and time: $endDate." -Level "INFO"
-} else {
+    # Write to file
     try {
-        $endDate = Get-Date $endInput -ErrorAction Stop
-        Write-Log -Message "End date set to: $endDate." -Level "INFO"
+        Add-Content -Path $script:AuditLogPath -Value $logEntry -ErrorAction Stop
     } catch {
-        Write-Log -Message "Invalid end date format. Error: $_" -Level "ERROR"
-        exit
+        Write-Warning "Failed to write to audit log file: $_"
     }
-}
 
-# Prompt whether to print only failed logins; default to No.
-$scope = Read-Host "Print only failed logins? (Y/N, default N)"
-if ([string]::IsNullOrWhiteSpace($scope)) {
-    $scope = "N"
-}
-Write-Log -Message "Filter failed logins only: $scope" -Level "INFO"
+    # Write to Windows Event Log
+    $eventType = switch ($Level) {
+        'ERROR'   { 'Error' }
+        'WARNING' { 'Warning' }
+        default   { 'Information' }
+    }
 
-# Prompt for output type: Table, GridView, HTML, or List.
-$output = Read-Host "Output Type ((T)able, (G)ridview, (H)TML, default List)"
-if ([string]::IsNullOrWhiteSpace($output)) {
-    $output = "List"
-}
-Write-Log -Message "Selected output type: $output" -Level "INFO"
+    $eventIdMap = @{
+        'INFO'    = 1000
+        'SUCCESS' = 1001
+        'WARNING' = 2000
+        'ERROR'   = 3000
+    }
 
-# Display the selected parameters for confirmation.
-Write-Host "`nSelected Parameters:"
-Write-Host "Hostname: $hostname"
-Write-Host "Start Date: $startDate"
-Write-Host "End Date: $endDate"
-Write-Host "Print only Failed Logins: $scope"
-Write-Host "Output Type: $output"
-Write-Host ""
+    $finalEventId = if ($EventId -eq 1000) { $eventIdMap[$Level] } else { $EventId }
+
+    try {
+        Write-EventLog -LogName Application -Source $script:EventSource -EntryType $eventType -EventId $finalEventId -Message $logEntry -ErrorAction SilentlyContinue
+    } catch {
+        # Silently continue if event log write fails
+    }
+
+    # Write to console
+    $color = switch ($Level) {
+        'ERROR'   { 'Red' }
+        'WARNING' { 'Yellow' }
+        'SUCCESS' { 'Green' }
+        default   { 'White' }
+    }
+
+    Write-Host $logEntry -ForegroundColor $color
+}
 
 #----------------------------------------------
-# 3. Retrieve the Event Log Data from the Target Computer
+# Main Script Execution
 #----------------------------------------------
-Write-Log -Message "Querying Security event log on $hostname from $startDate to $endDate..." -Level "INFO"
 try {
-    # Retrieve events from the Security log. Adjust -LogName if necessary.
-    $logEntries = Get-Eventlog -LogName Security -ComputerName $hostname -After $startDate -Before $endDate -ErrorAction Stop
-    Write-Log -Message "Retrieved $($logEntries.Count) events from Security log." -Level "INFO"
-} catch {
-    Write-Log -Message "Error retrieving event log data from $hostname: $_" -Level "ERROR"
-    exit
-}
+    Write-AuditLog -Message "===== Security Log Analysis Started =====" -Level "INFO"
+    Write-AuditLog -Message "PowerShell Version: $($PSVersionTable.PSVersion)" -Level "INFO"
+    Write-AuditLog -Message "Target Computer: $ComputerName" -Level "INFO"
+    Write-AuditLog -Message "Date Range: $StartDate to $EndDate" -Level "INFO"
+    Write-AuditLog -Message "Failed Only: $FailedOnly" -Level "INFO"
+    Write-AuditLog -Message "Output Format: $OutputFormat" -Level "INFO"
 
-#----------------------------------------------
-# 4. Process Each Event Record
-#----------------------------------------------
-if ($scope -match "Y") {
-    Write-Log -Message "Filtering only failed logon events." -Level "INFO"
-    foreach ($event in $logEntries) {
-        # Process logon failure events (EventID 4625)
-        # For local failures, ReplacementStrings index 10 equals 2
-        if (($event.EventID -eq 4625) -and ($event.ReplacementStrings[10] -eq 2)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Local"
-            $row.Status = "Failure"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = ""
-            $LogonActivityTable.Rows.Add($row)
+    #----------------------------------------------
+    # Validate Date Range
+    #----------------------------------------------
+    if ($StartDate -gt $EndDate) {
+        throw "Start date cannot be after end date."
+    }
+
+    #----------------------------------------------
+    # Create DataTable for Results
+    #----------------------------------------------
+    Write-AuditLog -Message "Creating data structure for logon/logoff events..." -Level "INFO"
+
+    $logonActivityTable = New-Object System.Collections.ArrayList
+
+    #----------------------------------------------
+    # Query Security Event Log
+    #----------------------------------------------
+    Write-AuditLog -Message "Querying Security event log on $ComputerName from $StartDate to $EndDate..." -Level "INFO"
+
+    try {
+        # Use Get-WinEvent for better performance and compatibility
+        $filterHashTable = @{
+            LogName   = 'Security'
+            StartTime = $StartDate
+            EndTime   = $EndDate
         }
-        # For remote failures, ReplacementStrings index 10 equals 10
-        if (($event.EventID -eq 4625) -and ($event.ReplacementStrings[10] -eq 10)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Remote"
-            $row.Status = "Failure"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = $event.ReplacementStrings[19]
-            $LogonActivityTable.Rows.Add($row)
+
+        if ($ComputerName -ne $env:COMPUTERNAME) {
+            $filterHashTable['ComputerName'] = $ComputerName
+        }
+
+        # Get relevant event IDs: 4624 (Logon), 4625 (Failed Logon), 4647 (Logoff)
+        if ($FailedOnly) {
+            $filterHashTable['ID'] = 4625
+        } else {
+            $filterHashTable['ID'] = 4624, 4625, 4647
+        }
+
+        $events = Get-WinEvent -FilterHashtable $filterHashTable -ErrorAction Stop
+
+        Write-AuditLog -Message "Retrieved $($events.Count) events from Security log." -Level "SUCCESS"
+    } catch {
+        Write-AuditLog -Message "Error retrieving event log data: $_" -Level "ERROR"
+        throw
+    }
+
+    #----------------------------------------------
+    # Process Events
+    #----------------------------------------------
+    Write-AuditLog -Message "Processing events..." -Level "INFO"
+
+    foreach ($event in $events) {
+        try {
+            $eventXML = [xml]$event.ToXml()
+            $eventData = $eventXML.Event.EventData.Data
+
+            switch ($event.Id) {
+                4624 {
+                    # Successful Logon
+                    $logonType = $eventData | Where-Object { $_.Name -eq 'LogonType' } | Select-Object -ExpandProperty '#text'
+                    $targetUserName = $eventData | Where-Object { $_.Name -eq 'TargetUserName' } | Select-Object -ExpandProperty '#text'
+                    $ipAddress = $eventData | Where-Object { $_.Name -eq 'IpAddress' } | Select-Object -ExpandProperty '#text'
+
+                    # Only process interactive logons (Type 2, 10, 11)
+                    if ($logonType -in @('2', '10', '11')) {
+                        $logonTypeDescription = switch ($logonType) {
+                            '2'  { 'Interactive' }
+                            '10' { 'RemoteInteractive' }
+                            '11' { 'CachedInteractive' }
+                        }
+
+                        [void]$logonActivityTable.Add([PSCustomObject]@{
+                            TimeGenerated = $event.TimeCreated
+                            EventType     = 'Logon'
+                            Status        = 'Success'
+                            LogonType     = $logonTypeDescription
+                            User          = $targetUserName
+                            IPAddress     = if ($ipAddress -and $ipAddress -ne '-') { $ipAddress } else { 'Local' }
+                            ComputerName  = $ComputerName
+                        })
+                    }
+                }
+                4625 {
+                    # Failed Logon
+                    $logonType = $eventData | Where-Object { $_.Name -eq 'LogonType' } | Select-Object -ExpandProperty '#text'
+                    $targetUserName = $eventData | Where-Object { $_.Name -eq 'TargetUserName' } | Select-Object -ExpandProperty '#text'
+                    $ipAddress = $eventData | Where-Object { $_.Name -eq 'IpAddress' } | Select-Object -ExpandProperty '#text'
+                    $failureReason = $eventData | Where-Object { $_.Name -eq 'SubStatus' } | Select-Object -ExpandProperty '#text'
+
+                    $logonTypeDescription = switch ($logonType) {
+                        '2'  { 'Interactive' }
+                        '10' { 'RemoteInteractive' }
+                        '11' { 'CachedInteractive' }
+                        default { "Type $logonType" }
+                    }
+
+                    [void]$logonActivityTable.Add([PSCustomObject]@{
+                        TimeGenerated = $event.TimeCreated
+                        EventType     = 'Logon'
+                        Status        = 'Failure'
+                        LogonType     = $logonTypeDescription
+                        User          = $targetUserName
+                        IPAddress     = if ($ipAddress -and $ipAddress -ne '-') { $ipAddress } else { 'Local' }
+                        ComputerName  = $ComputerName
+                    })
+                }
+                4647 {
+                    # User Initiated Logoff
+                    $targetUserName = $eventData | Where-Object { $_.Name -eq 'TargetUserName' } | Select-Object -ExpandProperty '#text'
+
+                    [void]$logonActivityTable.Add([PSCustomObject]@{
+                        TimeGenerated = $event.TimeCreated
+                        EventType     = 'Logoff'
+                        Status        = 'Success'
+                        LogonType     = 'N/A'
+                        User          = $targetUserName
+                        IPAddress     = 'N/A'
+                        ComputerName  = $ComputerName
+                    })
+                }
+            }
+        } catch {
+            Write-AuditLog -Message "Error processing event ID $($event.Id): $_" -Level "WARNING"
         }
     }
-} else {
-    Write-Log -Message "Processing all logon and logoff events." -Level "INFO"
-    foreach ($event in $logEntries) {
-        # Process successful local logon events (EventID 4624, Logon Type 2, at ReplacementStrings index 8)
-        if (($event.EventID -eq 4624) -and ($event.ReplacementStrings[8] -eq 2)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Local"
-            $row.Status = "Success"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = ""
-            $LogonActivityTable.Rows.Add($row)
-        }
-        # Process successful remote logon events (EventID 4624, Logon Type 10, at ReplacementStrings index 8)
-        if (($event.EventID -eq 4624) -and ($event.ReplacementStrings[8] -eq 10)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Remote"
-            $row.Status = "Success"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = $event.ReplacementStrings[18]
-            $LogonActivityTable.Rows.Add($row)
-        }
-        # Process failed local logon events (EventID 4625, local - ReplacementStrings index 10 equals 2)
-        if (($event.EventID -eq 4625) -and ($event.ReplacementStrings[10] -eq 2)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Local"
-            $row.Status = "Failure"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = ""
-            $LogonActivityTable.Rows.Add($row)
-        }
-        # Process failed remote logon events (EventID 4625, remote - ReplacementStrings index 10 equals 10)
-        if (($event.EventID -eq 4625) -and ($event.ReplacementStrings[10] -eq 10)) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logon - Remote"
-            $row.Status = "Failure"
-            $row.User = $event.ReplacementStrings[5]
-            $row.IPAddress = $event.ReplacementStrings[19]
-            $LogonActivityTable.Rows.Add($row)
-        }
-        # Process logoff events (EventID 4647)
-        if ($event.EventID -eq 4647) {
-            $row = $LogonActivityTable.NewRow()
-            $row.Date = $event.TimeGenerated
-            $row.Type = "Logoff"
-            $row.Status = "Success"
-            $row.User = $event.ReplacementStrings[1]
-            $row.IPAddress = ""
-            $LogonActivityTable.Rows.Add($row)
-        }
-    }
-}
 
-#----------------------------------------------
-# 5. Output the Results in the Selected Format
-#----------------------------------------------
-Write-Log -Message "Outputting the logon activity report using the selected format: $output" -Level "INFO"
-if ($output -match "T") {
-    # Output as a table
-    $LogonActivityTable | Format-Table -AutoSize
-}
-elseif ($output -match "H") {
-    # Create custom HTML styles
-    $htmlStyle = @"
+    Write-AuditLog -Message "Processed $($logonActivityTable.Count) logon/logoff events." -Level "SUCCESS"
+
+    #----------------------------------------------
+    # Output Results
+    #----------------------------------------------
+    if ($logonActivityTable.Count -eq 0) {
+        Write-AuditLog -Message "No matching events found." -Level "WARNING"
+    } else {
+        switch ($OutputFormat) {
+            'Table' {
+                if ($PSCmdlet.ShouldProcess("Console", "Display events in table format")) {
+                    Write-Host "`nLogon Activity Report:" -ForegroundColor Cyan
+                    $logonActivityTable | Sort-Object TimeGenerated -Descending | Format-Table -AutoSize
+                    Write-AuditLog -Message "Events displayed in table format." -Level "SUCCESS"
+                }
+            }
+            'GridView' {
+                if ($PSCmdlet.ShouldProcess("GridView", "Display events in interactive grid")) {
+                    $logonActivityTable | Sort-Object TimeGenerated -Descending | Out-GridView -Title "Logon Activity Report - $ComputerName"
+                    Write-AuditLog -Message "Events displayed in GridView." -Level "SUCCESS"
+                }
+            }
+            'HTML' {
+                if (-not $ExportPath) {
+                    $ExportPath = Join-Path $env:USERPROFILE "Desktop\LogonActivity_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
+                }
+
+                if ($PSCmdlet.ShouldProcess($ExportPath, "Export events to HTML")) {
+                    $htmlStyle = @"
 <style>
-BODY { background-color: #F2F2F2; font-family: Arial, sans-serif; }
-TABLE { border-collapse: collapse; width: 100%; }
-TH, TD { border: 1px solid #000; padding: 8px; text-align: left; }
-TH { background-color: #BDBDBD; }
-TD { background-color: #D8D8D8; }
+BODY { background-color: #F5F5F5; font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; }
+H2 { color: #2E4053; border-bottom: 2px solid #3498DB; padding-bottom: 10px; }
+TABLE { border-collapse: collapse; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+TH { background-color: #3498DB; color: white; padding: 12px; text-align: left; font-weight: bold; }
+TD { border: 1px solid #BDC3C7; padding: 10px; background-color: white; }
+TR:nth-child(even) TD { background-color: #ECF0F1; }
+TR:hover TD { background-color: #D5DBDB; }
+.success { color: #27AE60; font-weight: bold; }
+.failure { color: #E74C3C; font-weight: bold; }
 </style>
 "@
-    # Convert the DataTable to HTML and save it to a file
-    $htmlOutput = $LogonActivityTable | Select-Object Date, Type, Status, User, IPAddress | ConvertTo-Html -Head $htmlStyle -Body "<h2>Logon Activity Report</h2>" -Title "Logon Activity"
-    $htmlFile = Join-Path -Path (Get-Location) -ChildPath "LogonActivity.html"
-    $htmlOutput | Out-File -FilePath $htmlFile -Encoding UTF8
-    Write-Log -Message "HTML report generated at: $htmlFile" -Level "INFO"
-    # Optionally, open the HTML file in the default browser
-    Invoke-Item -Path $htmlFile
-}
-elseif ($output -match "G") {
-    # Output using GridView
-    $LogonActivityTable | Out-GridView -Title "Logon Activity Report"
-}
-else {
-    # Default output: simply return the DataTable object as a list.
-    $LogonActivityTable
-}
+                    $htmlBody = $logonActivityTable | Sort-Object TimeGenerated -Descending |
+                        ConvertTo-Html -Head $htmlStyle -Body "<h2>Logon Activity Report - $ComputerName</h2><p>Report Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>" -Title "Logon Activity"
 
-Write-Log -Message "Logon activity report processing completed." -Level "INFO"
+                    $htmlBody | Out-File -FilePath $ExportPath -Encoding UTF8
+                    Write-AuditLog -Message "HTML report generated: $ExportPath" -Level "SUCCESS"
+                    Write-Host "`nReport exported to: $ExportPath" -ForegroundColor Green
+                }
+            }
+            'JSON' {
+                if (-not $ExportPath) {
+                    $ExportPath = Join-Path $env:USERPROFILE "Desktop\LogonActivity_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+                }
+
+                if ($PSCmdlet.ShouldProcess($ExportPath, "Export events to JSON")) {
+                    $logonActivityTable | Sort-Object TimeGenerated -Descending | ConvertTo-Json -Depth 3 | Out-File -FilePath $ExportPath -ErrorAction Stop
+                    Write-AuditLog -Message "JSON report generated: $ExportPath" -Level "SUCCESS"
+                    Write-Host "`nReport exported to: $ExportPath" -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    Write-AuditLog -Message "===== Security Log Analysis Completed Successfully =====" -Level "SUCCESS"
+    Write-AuditLog -Message "Transcript saved to: $transcriptPath" -Level "INFO"
+    Write-AuditLog -Message "Audit log saved to: $script:AuditLogPath" -Level "INFO"
+
+    exit 0
+
+} catch {
+    Write-AuditLog -Message "CRITICAL ERROR: $_" -Level "ERROR"
+    Write-AuditLog -Message "Stack Trace: $($_.ScriptStackTrace)" -Level "ERROR"
+    exit 1
+} finally {
+    # Stop transcript
+    try {
+        Stop-Transcript -ErrorAction SilentlyContinue
+    } catch {
+        # Silently continue if transcript stop fails
+    }
+}
