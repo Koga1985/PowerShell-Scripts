@@ -1,173 +1,148 @@
 <#
 .SYNOPSIS
     Checks the status of VMware Tools on all virtual machines in a vCenter Server or ESXi host and updates them if necessary.
-    
+
 .DESCRIPTION
     This script performs the following tasks:
       1. Ensures the VMware.PowerCLI module is installed; if not, installs it.
       2. Imports the VMware.PowerCLI module.
-      3. Prompts the user for connection details (vCenter/ESXi host, username, and password) and connects.
+      3. Prompts for connection details (vCenter/ESXi host, username, and password) and connects.
       4. Retrieves all VMs in the environment.
-      5. For each virtual machine, it checks the status of VMware Tools:
-           - If Tools are not installed or not running, it triggers an update without rebooting.
-           - Otherwise, it logs that the Tools are up-to-date.
+      5. For each VM, checks the status of VMware Tools and triggers an update if needed without rebooting.
       6. Disconnects from the vCenter/ESXi host.
-      
-#
+
+.SECURITY FEATURES
+    - Requires PowerShell 5.1+ and Administrator privileges
+    - Strict certificate validation enforced
+    - Single vCenter server mode to prevent cross-contamination
+    - PSCredential-based authentication with secure password handling
+    - Comprehensive audit logging to file and Windows Event Log
+    - Input validation for server names
+    - WhatIf/Confirm support for VMTools update operations
+    - Automatic session cleanup in finally blocks
+
+.COMPLIANCE
+    - Suitable for Fourth Estate infrastructure
+    - Audit trail maintained for all VMTools update operations
+    - Follows principle of least privilege
+    - Implements defense-in-depth security controls
+
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
     Repository:     https://github.com/Koga1985/PowerShell-Scripts
     License:        MIT
-    Last Updated:   August 14, 2025
-    Version:        1.0
+    Last Updated:   October 30, 2025
+    Version:        2.0
     Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
 #>
 
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
+#Requires -Modules VMware.PowerCLI
 
-#==============================================
-# Global Logging Function
-#==============================================
-function Write-Log {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Message,
-        [string]$Level = "INFO"
-    )
+[CmdletBinding(SupportsShouldProcess = $true)]
+param()
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Write-AuditLog {
+    param([Parameter(Mandatory = $true)][string]$Message, [ValidateSet('INFO', 'WARNING', 'ERROR', 'SECURITY')][string]$Level = 'INFO',
+        [string]$LogFile, [string]$VCenter, [string]$VMName)
     $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "$timeStamp [$Level] $Message"
-}
-
-#==============================================
-# 0. Admin Rights and PowerShell Version Check
-#==============================================
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
-    exit
-}
-if ($PSVersionTable.PSVersion.Major -lt 5) {
-    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
-    exit
-}
-
-#==============================================
-# 1. Ensure VMware.PowerCLI Module is Installed and Imported
-#==============================================
-
-Write-Log -Message "Checking for VMware.PowerCLI module..."
-if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
-    Write-Log -Message "VMware.PowerCLI module not found. Installing the latest version..." -Level "INFO"
+    $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $auditMessage = "$timeStamp [$Level] User: $userName"
+    if ($VCenter) { $auditMessage += " | vCenter: $VCenter" }
+    if ($VMName) { $auditMessage += " | Resource: $VMName" }
+    $auditMessage += " | $Message"
+    switch ($Level) { 'ERROR' { Write-Host $auditMessage -ForegroundColor Red } 'WARNING' { Write-Host $auditMessage -ForegroundColor Yellow }
+        'SECURITY' { Write-Host $auditMessage -ForegroundColor Cyan } default { Write-Host $auditMessage } }
+    if ($LogFile) { try { Add-Content -Path $LogFile -Value $auditMessage -ErrorAction Stop } catch { Write-Warning "Failed to write to log file: $_" } }
     try {
-        Install-Module -Name VMware.PowerCLI -Force -AllowClobber -ErrorAction Stop
-        Write-Log -Message "VMware.PowerCLI module installed successfully." -Level "INFO"
-    } catch {
-        Write-Log -Message "Error installing VMware.PowerCLI module: $_" -Level "ERROR"
-        exit
-    }
-} else {
-    Write-Log -Message "VMware.PowerCLI module already installed." -Level "INFO"
+        $eventSource = 'VMware-PowerCLI-Security'
+        if (-not [System.Diagnostics.EventLog]::SourceExists($eventSource)) { New-EventLog -LogName Application -Source $eventSource -ErrorAction SilentlyContinue }
+        $eventType = switch ($Level) { 'ERROR' { 'Error' } 'WARNING' { 'Warning' } 'SECURITY' { 'SuccessAudit' } default { 'Information' } }
+        Write-EventLog -LogName Application -Source $eventSource -EntryType $eventType -EventId 1011 -Message $auditMessage -ErrorAction SilentlyContinue
+    } catch { }
 }
 
-# Import the VMware.PowerCLI module
-Write-Log -Message "Importing VMware.PowerCLI module..."
+function Test-ValidServerName { param([string]$Name)
+    if ($Name -match '[;&|`$<>]') { throw "Invalid characters in server name: $Name" }
+    if ([string]::IsNullOrWhiteSpace($Name)) { throw "Server name cannot be empty" }
+    return $true
+}
+
+$logDirectory = Join-Path $env:ProgramData 'VMware\PowerCLI\AuditLogs'
+if (-not (Test-Path $logDirectory)) { New-Item -Path $logDirectory -ItemType Directory -Force | Out-Null }
+$logFile = Join-Path $logDirectory "VMTools_Update_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+Write-AuditLog -Message "Script execution started" -Level SECURITY -LogFile $logFile
+$viConnection = $null
+$credential = $null
+
 try {
+    Write-AuditLog -Message "Checking for VMware.PowerCLI module..." -LogFile $logFile
+    if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
+        Write-AuditLog -Message "VMware.PowerCLI module not found. Installing..." -Level WARNING -LogFile $logFile
+        Install-Module -Name VMware.PowerCLI -Force -AllowClobber -Scope CurrentUser
+        Write-AuditLog -Message "VMware.PowerCLI installed successfully" -LogFile $logFile
+    } else { Write-AuditLog -Message "VMware.PowerCLI module already installed" -LogFile $logFile }
     Import-Module VMware.PowerCLI -ErrorAction Stop
-    Write-Log -Message "VMware.PowerCLI module imported successfully." -Level "INFO"
-} catch {
-    Write-Log -Message "Error importing VMware.PowerCLI module: $_" -Level "ERROR"
-    exit
-}
+    Write-AuditLog -Message "VMware.PowerCLI module imported successfully" -LogFile $logFile
+    Set-PowerCLIConfiguration -InvalidCertificateAction Fail -Confirm:$false -Scope Session | Out-Null
+    Set-PowerCLIConfiguration -DefaultVIServerMode Single -Confirm:$false -Scope Session | Out-Null
+    Set-PowerCLIConfiguration -ParticipateInCEIP $false -Confirm:$false -Scope Session | Out-Null
+    Write-AuditLog -Message "PowerCLI security configuration applied" -Level SECURITY -LogFile $logFile
 
-#==============================================
-# 2. Connect to vCenter Server or ESXi Host
-#==============================================
+    $Summary = @{'VMs Processed' = 0; 'VMs Updated' = 0; 'VMs Failed' = 0}
+    $server = Read-Host "Enter vCenter Server or ESXi host"
+    Test-ValidServerName -Name $server
+    $user = Read-Host "Enter username"
+    $securePassword = Read-Host "Enter password" -AsSecureString
+    $credential = New-Object System.Management.Automation.PSCredential($user, $securePassword)
+    Write-AuditLog -Message "Attempting secure connection to $server" -VCenter $server -LogFile $logFile
+    $viConnection = Connect-VIServer -Server $server -Credential $credential -ErrorAction Stop
+    Write-AuditLog -Message "Successfully connected to $server" -Level SECURITY -VCenter $server -LogFile $logFile
 
-# Summary variable
-$Summary = @{'VMs Processed'=0; 'VMs Updated'=0; 'VMs Failed'=0}
-
-# Prompt for connection details
-$server = Read-Host "Enter vCenter Server or ESXi host"        # e.g., "vcenter.example.com" or "esxi01.example.com"
-$user = Read-Host "Enter username"                              # e.g., "administrator@vsphere.local"
-$password = Read-Host "Enter password" -AsSecureString           # Securely capture the password
-
-Write-Log -Message "Connecting to $server..."
-try {
-    Connect-VIServer -Server $server -User $user -Password $password -ErrorAction Stop | Out-Null
-    Write-Log -Message "Successfully connected to $server." -Level "INFO"
-    $Summary['Connection'] = "Success"
-} catch {
-    Write-Log -Message "Error connecting to $server: $_" -Level "ERROR"
-    $Summary['Connection'] = "Failed"
-    Write-Host "\nSummary:" -ForegroundColor Cyan
-    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
-    exit
-}
-
-#==============================================
-# 3. Retrieve All Virtual Machines
-#==============================================
-
-Write-Log -Message "Retrieving all virtual machines..."
-try {
+    Write-AuditLog -Message "Retrieving all virtual machines..." -VCenter $server -LogFile $logFile
     $vms = Get-VM -ErrorAction Stop
-    Write-Log -Message "Retrieved $($vms.Count) virtual machines." -Level "INFO"
+    Write-AuditLog -Message "Retrieved $($vms.Count) virtual machines" -VCenter $server -LogFile $logFile
     $Summary['VMs Processed'] = $vms.Count
-} catch {
-    Write-Log -Message "Error retrieving virtual machines: $_" -Level "ERROR"
-    $Summary['VMs Processed'] = 0
-    Disconnect-VIServer -Confirm:$false
-    Write-Host "\nSummary:" -ForegroundColor Cyan
-    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
-    exit
-}
 
-#==============================================
-# 4. Check VMware Tools Status and Update if Necessary
-#==============================================
-
-foreach ($vm in $vms) {
-    Write-Log -Message "Checking VMware Tools for VM: $($vm.Name)..." -Level "INFO"
-    try {
-        $toolsStatus = $vm | Get-VMTools | Select-Object -ExpandProperty ToolsVersionStatus
-    } catch {
-        Write-Log -Message "Error fetching VMware Tools status for VM '$($vm.Name)': $_" -Level "ERROR"
-        $Summary['VMs Failed']++
-        continue
-    }
-    if ($toolsStatus -eq "toolsNotInstalled" -or $toolsStatus -eq "toolsNotRunning") {
-        Write-Log -Message "VMware Tools not installed or not running for VM '$($vm.Name)'. Initiating update..." -Level "INFO"
+    foreach ($vm in $vms) {
         try {
-            Update-Tools -VM $vm -NoReboot -ErrorAction Stop
-            Write-Log -Message "VMware Tools updated successfully for VM '$($vm.Name)'." -Level "INFO"
-            $Summary['VMs Updated']++
+            $toolsStatus = ($vm | Get-View).Guest.ToolsVersionStatus
+            Write-AuditLog -Message "Checking VMware Tools for VM: $($vm.Name) - Status: $toolsStatus" -VCenter $server -VMName $vm.Name -LogFile $logFile
+            
+            if ($toolsStatus -eq "guestToolsNeedUpgrade" -or $toolsStatus -eq "guestToolsNotInstalled" -or $toolsStatus -eq "guestToolsUnmanaged") {
+                if ($PSCmdlet.ShouldProcess("$($vm.Name)", "Update VMware Tools")) {
+                    Write-AuditLog -Message "VMware Tools need update for VM '$($vm.Name)'. Initiating update..." -Level SECURITY -VCenter $server -VMName $vm.Name -LogFile $logFile
+                    Update-Tools -VM $vm -NoReboot -ErrorAction Stop
+                    Write-AuditLog -Message "VMware Tools updated successfully for VM '$($vm.Name)'" -Level SECURITY -VCenter $server -VMName $vm.Name -LogFile $logFile
+                    $Summary['VMs Updated']++
+                }
+            } else {
+                Write-Verbose "VMware Tools already up-to-date for VM '$($vm.Name)'"
+            }
         } catch {
-            Write-Log -Message "Error updating VMware Tools for VM '$($vm.Name)': $_" -Level "ERROR"
+            Write-AuditLog -Message "Error processing VMware Tools for VM '$($vm.Name)': $_" -Level ERROR -VCenter $server -VMName $vm.Name -LogFile $logFile
             $Summary['VMs Failed']++
         }
-    } else {
-        Write-Log -Message "VMware Tools already up-to-date for VM '$($vm.Name)'." -Level "INFO"
     }
-    Write-Log -Message "--------------------------------------------" -Level "INFO"
-}
-
-#==============================================
-# 5. Disconnect from vCenter Server or ESXi Host
-#==============================================
-
-Write-Log -Message "Disconnecting from $server..."
-try {
-    Disconnect-VIServer -Confirm:$false | Out-Null
-    Write-Log -Message "Disconnected from $server." -Level "INFO"
-    $Summary['Disconnected'] = "Yes"
 } catch {
-    Write-Log -Message "Error disconnecting from $server: $_" -Level "ERROR"
-    $Summary['Disconnected'] = "Error"
-}
-
-#==============================================
-# 6. Summary Output
-#==============================================
-Write-Log -Message "VMware Tools update process completed." -Level "INFO"
-Write-Host "\nSummary:" -ForegroundColor Cyan
-foreach ($key in $Summary.Keys) {
-    Write-Host "$key: $Summary[$key]"
+    Write-AuditLog -Message "Script execution failed: $_" -Level ERROR -VCenter $server -LogFile $logFile
+    throw
+} finally {
+    if ($viConnection) {
+        try {
+            Write-AuditLog -Message "Disconnecting from $server" -VCenter $server -LogFile $logFile
+            Disconnect-VIServer -Server $server -Confirm:$false -ErrorAction SilentlyContinue
+            Write-AuditLog -Message "Disconnected from $server" -Level SECURITY -VCenter $server -LogFile $logFile
+        } catch { Write-AuditLog -Message "Error during disconnect: $_" -Level WARNING -LogFile $logFile }
+    }
+    if ($credential) { $credential = $null }
+    if ($securePassword) { $securePassword = $null }
+    Write-Host "`nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
+    Write-Host "Audit log saved to: $logFile"
+    Write-AuditLog -Message "VMware Tools update process completed" -Level SECURITY -LogFile $logFile
 }

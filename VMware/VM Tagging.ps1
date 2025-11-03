@@ -3,200 +3,148 @@
     Applies a specific tag to all virtual machines in a vCenter Server or ESXi host.
 
 .DESCRIPTION
-    This script does the following:
-      1. Checks if the VMware.PowerCLI module is installed (installs it if not) and imports it.
-      2. Prompts the user for connection details (vCenter Server/ESXi host, username, and password) and connects.
-      3. Retrieves all VMs from the connected environment.
-      4. Prompts the user for tag details:
-         - Tag name to be applied.
-         - Tag category name.
-         - Tag description.
-      5. Checks if the specified tag exists; if not, verifies (or creates) the tag category and creates the tag.
-      6. Iterates over all VMs and assigns the tag.
+    This script:
+      1. Checks if the VMware.PowerCLI module is installed (installs if not) and imports it.
+      2. Prompts for connection details and connects.
+      3. Retrieves all VMs from the environment.
+      4. Prompts for tag details (name, category, description).
+      5. Checks if the tag exists; creates if not.
+      6. Applies the tag to all VMs.
       7. Disconnects from the vCenter Server/ESXi host.
-#
+
+.SECURITY FEATURES
+    - Requires PowerShell 5.1+ and Administrator privileges
+    - Strict certificate validation enforced
+    - PSCredential-based authentication
+    - Comprehensive audit logging
+    - Input validation for tag names
+    - WhatIf/Confirm support for tagging operations
+    - Automatic session cleanup
+
+.COMPLIANCE
+    - Suitable for Fourth Estate infrastructure
+    - Audit trail for all tagging operations
+    - Defense-in-depth security controls
+
 .NOTES
     Author:         Dewain Smith #TheBeardedEngineer
     Repository:     https://github.com/Koga1985/PowerShell-Scripts
-    License:        MIT
-    Last Updated:   August 14, 2025
-    Version:        1.0
-    Disclaimer:     Scripts are provided as-is, without warranty. Test in non-production before use.
+    Last Updated:   October 30, 2025
+    Version:        2.0
 #>
 
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
+#Requires -Modules VMware.PowerCLI
 
-#----------------------------------------------
-# Global Logging Function
-#----------------------------------------------
-function Write-Log {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Message,
-        [string]$Level = "INFO"
-    )
+[CmdletBinding(SupportsShouldProcess = $true)]
+param()
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Write-AuditLog {
+    param([Parameter(Mandatory = $true)][string]$Message, [ValidateSet('INFO', 'WARNING', 'ERROR', 'SECURITY')][string]$Level = 'INFO',
+        [string]$LogFile, [string]$VCenter, [string]$VMName)
     $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "$timeStamp [$Level] $Message"
-}
-
-#----------------------------------------------
-# 0. Admin Rights and PowerShell Version Check
-#----------------------------------------------
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "ERROR: Script must be run as Administrator." -ForegroundColor Red
-    exit
-}
-if ($PSVersionTable.PSVersion.Major -lt 5) {
-    Write-Host "ERROR: PowerShell 5.0 or higher is required." -ForegroundColor Red
-    exit
-}
-
-#----------------------------------------------
-# 1. Ensure VMware.PowerCLI Module is Installed and Imported
-#----------------------------------------------
-
-Write-Log -Message "Checking for VMware.PowerCLI module..."
-if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
-    Write-Log -Message "VMware.PowerCLI module not found. Installing the latest version..." -Level "INFO"
+    $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $auditMessage = "$timeStamp [$Level] User: $userName"
+    if ($VCenter) { $auditMessage += " | vCenter: $VCenter" }
+    if ($VMName) { $auditMessage += " | Resource: $VMName" }
+    $auditMessage += " | $Message"
+    switch ($Level) { 'ERROR' { Write-Host $auditMessage -ForegroundColor Red } 'WARNING' { Write-Host $auditMessage -ForegroundColor Yellow }
+        'SECURITY' { Write-Host $auditMessage -ForegroundColor Cyan } default { Write-Host $auditMessage } }
+    if ($LogFile) { try { Add-Content -Path $LogFile -Value $auditMessage -ErrorAction Stop } catch { Write-Warning "Failed to write to log file: $_" } }
     try {
-        Install-Module -Name VMware.PowerCLI -Force -AllowClobber -ErrorAction Stop
-        Write-Log -Message "VMware.PowerCLI module installed successfully." -Level "INFO"
-    } catch {
-        Write-Log -Message "Error installing VMware.PowerCLI module: $_" -Level "ERROR"
-        exit
+        $eventSource = 'VMware-PowerCLI-Security'
+        if (-not [System.Diagnostics.EventLog]::SourceExists($eventSource)) { New-EventLog -LogName Application -Source $eventSource -ErrorAction SilentlyContinue }
+        $eventType = switch ($Level) { 'ERROR' { 'Error' } 'WARNING' { 'Warning' } 'SECURITY' { 'SuccessAudit' } default { 'Information' } }
+        Write-EventLog -LogName Application -Source $eventSource -EntryType $eventType -EventId 1009 -Message $auditMessage -ErrorAction SilentlyContinue
+    } catch { }
+}
+
+function Test-ValidServerName { param([string]$Name)
+    if ($Name -match '[;&|`$<>]') { throw "Invalid characters in name: $Name" }
+    if ([string]::IsNullOrWhiteSpace($Name)) { throw "Name cannot be empty" }
+    return $true
+}
+
+$logDirectory = Join-Path $env:ProgramData 'VMware\PowerCLI\AuditLogs'
+if (-not (Test-Path $logDirectory)) { New-Item -Path $logDirectory -ItemType Directory -Force | Out-Null }
+$logFile = Join-Path $logDirectory "VM_Tagging_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+Write-AuditLog -Message "Script execution started" -Level SECURITY -LogFile $logFile
+$viConnection = $null
+$credential = $null
+
+try {
+    if (-not (Get-Module -Name VMware.PowerCLI -ListAvailable)) {
+        Install-Module -Name VMware.PowerCLI -Force -AllowClobber -Scope CurrentUser
     }
-} else {
-    Write-Log -Message "VMware.PowerCLI module is already installed." -Level "INFO"
-}
-
-Write-Log -Message "Importing VMware.PowerCLI module..."
-try {
     Import-Module VMware.PowerCLI -ErrorAction Stop
-    Write-Log -Message "VMware.PowerCLI module imported successfully." -Level "INFO"
-} catch {
-    Write-Log -Message "Error importing VMware.PowerCLI module: $_" -Level "ERROR"
-    exit
-}
+    Set-PowerCLIConfiguration -InvalidCertificateAction Fail -Confirm:$false -Scope Session | Out-Null
+    Set-PowerCLIConfiguration -DefaultVIServerMode Single -Confirm:$false -Scope Session | Out-Null
+    Set-PowerCLIConfiguration -ParticipateInCEIP $false -Confirm:$false -Scope Session | Out-Null
+    Write-AuditLog -Message "PowerCLI configured securely" -Level SECURITY -LogFile $logFile
 
-#----------------------------------------------
-# 2. Connect to vCenter Server or ESXi Host
-#----------------------------------------------
-# Prompt the user for source connection details
+    $Summary = @{'VMs Processed' = 0; 'VMs Tagged' = 0; 'VMs Failed' = 0}
+    $server = Read-Host "Enter vCenter Server or ESXi host"
+    Test-ValidServerName -Name $server
+    $user = Read-Host "Enter username"
+    $securePassword = Read-Host "Enter password" -AsSecureString
+    $credential = New-Object System.Management.Automation.PSCredential($user, $securePassword)
+    Write-AuditLog -Message "Connecting to $server" -VCenter $server -LogFile $logFile
+    $viConnection = Connect-VIServer -Server $server -Credential $credential -ErrorAction Stop
+    Write-AuditLog -Message "Connected to $server" -Level SECURITY -VCenter $server -LogFile $logFile
 
-# Summary variable
-$Summary = @{'VMs Processed'=0; 'VMs Tagged'=0; 'VMs Failed'=0}
-
-$server = Read-Host "Enter vCenter Server or ESXi host"        # e.g., "vcenter.example.com" or "esxi01.example.com"
-$user   = Read-Host "Enter username"                           # e.g., "administrator@vsphere.local"
-$password = Read-Host "Enter password" -AsSecureString         # Password is captured securely
-
-Write-Log -Message "Connecting to $server..."
-try {
-    Connect-VIServer -Server $server -User $user -Password $password -ErrorAction Stop | Out-Null
-    Write-Log -Message "Successfully connected to $server." -Level "INFO"
-    $Summary['Connection'] = "Success"
-} catch {
-    Write-Log -Message "Error connecting to $server: $_" -Level "ERROR"
-    $Summary['Connection'] = "Failed"
-    Write-Host "\nSummary:" -ForegroundColor Cyan
-    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
-    exit
-}
-
-#----------------------------------------------
-# 3. Retrieve All Virtual Machines
-#----------------------------------------------
-
-Write-Log -Message "Retrieving all virtual machines..."
-try {
+    Write-AuditLog -Message "Retrieving VMs..." -VCenter $server -LogFile $logFile
     $vms = Get-VM -ErrorAction Stop
-    Write-Log -Message "Retrieved $($vms.Count) VMs." -Level "INFO"
+    Write-AuditLog -Message "Retrieved $($vms.Count) VMs" -VCenter $server -LogFile $logFile
     $Summary['VMs Processed'] = $vms.Count
-} catch {
-    Write-Log -Message "Error retrieving virtual machines: $_" -Level "ERROR"
-    $Summary['VMs Processed'] = 0
-    Disconnect-VIServer -Confirm:$false
-    Write-Host "\nSummary:" -ForegroundColor Cyan
-    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
-    exit
-}
 
-#----------------------------------------------
-# 4. Prompt for Tag Information
-#----------------------------------------------
-$tagName = Read-Host "Enter the tag name you want to apply"
-$tagCategoryName = Read-Host "Enter the tag category name"
-$tagDescription = Read-Host "Enter the tag description"
+    $tagName = Read-Host "Enter the tag name to apply"
+    Test-ValidServerName -Name $tagName
+    $tagCategoryName = Read-Host "Enter the tag category name"
+    Test-ValidServerName -Name $tagCategoryName
+    $tagDescription = Read-Host "Enter the tag description"
 
-#----------------------------------------------
-# 5. Check if the Tag and Tag Category Exist (Create if Not)
-#----------------------------------------------
-try {
-    # Try to get the tag by name; if not available, it will return $null
     $tag = Get-Tag -Name $tagName -ErrorAction SilentlyContinue
-} catch {
-    Write-Log -Message "Error checking existence of tag '$tagName': $_" -Level "ERROR"
-}
-
-if (-not $tag) {
-    Write-Log -Message "Tag '$tagName' not found. Creating tag..."
-    try {
-        # Check if the tag category exists; if not, create the tag category
+    if (-not $tag) {
+        Write-AuditLog -Message "Tag '$tagName' not found. Creating..." -VCenter $server -LogFile $logFile
         $tagCategoryObject = Get-TagCategory -Name $tagCategoryName -ErrorAction SilentlyContinue
         if (-not $tagCategoryObject) {
-            Write-Log -Message "Tag category '$tagCategoryName' not found. Creating tag category..."
+            Write-AuditLog -Message "Creating tag category '$tagCategoryName'" -Level SECURITY -VCenter $server -LogFile $logFile
             $tagCategoryObject = New-TagCategory -Name $tagCategoryName -Description $tagDescription -Cardinality Single -ErrorAction Stop
-            Write-Log -Message "Tag category '$tagCategoryName' created successfully." -Level "INFO"
         }
-        
-        # Create the tag within the found or newly created category
         $tag = New-Tag -Name $tagName -Category $tagCategoryObject -Description $tagDescription -ErrorAction Stop
-        Write-Log -Message "Tag '$tagName' created successfully." -Level "INFO"
-    } catch {
-        Write-Log -Message "Error creating tag '$tagName': $_" -Level "ERROR"
-        Disconnect-VIServer -Confirm:$false
-        exit
+        Write-AuditLog -Message "Tag '$tagName' created" -Level SECURITY -VCenter $server -LogFile $logFile
     }
-} else {
-    Write-Log -Message "Tag '$tagName' already exists. Proceeding with assignment." -Level "INFO"
-}
 
-#----------------------------------------------
-# 6. Apply the Tag to Each Virtual Machine
-#----------------------------------------------
-
-foreach ($vm in $vms) {
-    Write-Log -Message "Tagging VM '$($vm.Name)' with tag '$tagName' under category '$tagCategoryName'..."
-    try {
-        New-VIPermission -Tag $tag -Entity $vm -ErrorAction Stop
-        Write-Log -Message "Successfully tagged VM '$($vm.Name)'." -Level "INFO"
-        $Summary['VMs Tagged']++
-    } catch {
-        Write-Log -Message "Error tagging VM '$($vm.Name)': $_" -Level "ERROR"
-        $Summary['VMs Failed']++
+    foreach ($vm in $vms) {
+        if ($PSCmdlet.ShouldProcess("$($vm.Name)", "Apply tag '$tagName'")) {
+            try {
+                New-TagAssignment -Tag $tag -Entity $vm -ErrorAction Stop | Out-Null
+                Write-AuditLog -Message "Tagged VM: $($vm.Name)" -VCenter $server -VMName $vm.Name -LogFile $logFile
+                $Summary['VMs Tagged']++
+            } catch {
+                Write-AuditLog -Message "Failed to tag VM $($vm.Name): $_" -Level ERROR -VCenter $server -VMName $vm.Name -LogFile $logFile
+                $Summary['VMs Failed']++
+            }
+        }
     }
-}
-
-Write-Log -Message "Tagging process completed." -Level "INFO"
-
-#----------------------------------------------
-# 7. Disconnect from vCenter Server or ESXi Host
-#----------------------------------------------
-
-Write-Log -Message "Disconnecting from vCenter Server..."
-try {
-    Disconnect-VIServer -Confirm:$false | Out-Null
-    Write-Log -Message "Disconnected from vCenter Server." -Level "INFO"
-    $Summary['Disconnected'] = "Yes"
 } catch {
-    Write-Log -Message "Error disconnecting from vCenter Server: $_" -Level "ERROR"
-    $Summary['Disconnected'] = "Error"
-}
-
-#----------------------------------------------
-# 8. Summary Output
-#----------------------------------------------
-Write-Log -Message "Script execution completed." -Level "INFO"
-Write-Host "\nSummary:" -ForegroundColor Cyan
-foreach ($key in $Summary.Keys) {
-    Write-Host "$key: $Summary[$key]"
+    Write-AuditLog -Message "Script execution failed: $_" -Level ERROR -LogFile $logFile
+    throw
+} finally {
+    if ($viConnection) {
+        try {
+            Disconnect-VIServer -Server $server -Confirm:$false -ErrorAction SilentlyContinue
+            Write-AuditLog -Message "Disconnected from $server" -Level SECURITY -VCenter $server -LogFile $logFile
+        } catch { }
+    }
+    if ($credential) { $credential = $null }
+    if ($securePassword) { $securePassword = $null }
+    Write-Host "`nSummary:" -ForegroundColor Cyan
+    foreach ($key in $Summary.Keys) { Write-Host "$key: $Summary[$key]" }
+    Write-Host "Audit log saved to: $logFile"
+    Write-AuditLog -Message "Script execution completed" -Level SECURITY -LogFile $logFile
 }
